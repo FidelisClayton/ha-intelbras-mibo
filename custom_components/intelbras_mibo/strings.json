@@ -1,0 +1,44 @@
+{
+  "title": "Intelbras Mibo",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect your Mibo account",
+        "description": "Unofficial community integration. All EIW 1003 switches in the account and their three keys are added automatically.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect your Mibo account",
+        "description": "Sign in again with the same account.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      },
+      "code": {
+        "title": "Verify your email",
+        "description": "Enter the code sent to your email. Retrying a code does not send another email.",
+        "data": {
+          "code": "Verification code"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Unable to sign in. Check your account credentials.",
+      "cannot_connect": "Unable to connect. Try again later.",
+      "invalid_code": "The code could not be verified. Check it and try again.",
+      "account_mismatch": "Use the same account as the existing integration."
+    },
+    "abort": {
+      "already_configured": "This account is already configured.",
+      "already_in_progress": "Setup for this account is already in progress.",
+      "no_supported_devices": "No supported EIW 1003 switches were found.",
+      "cannot_connect": "Unable to discover switches. Try again later.",
+      "invalid_auth": "The session was rejected. Sign in again.",
+      "unique_id_mismatch": "Use the same account as the existing integration."
+    }
+  }
+}
