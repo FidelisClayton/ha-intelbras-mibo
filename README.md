@@ -11,9 +11,9 @@ subprocess, or extra service.
 
 ## Installation availability
 
-The implementation is currently on `feat/hacs-integration`. The planned public
-repository is `FidelisClayton/ha-intelbras-mibo`; publication is pending. The
-bootstrap on `main` does not contain the integration. Until the implementation is
+The implementation is on `feat/hacs-integration` in the public repository
+[`FidelisClayton/ha-intelbras-mibo`](https://github.com/FidelisClayton/ha-intelbras-mibo).
+The bootstrap on `main` does not contain the integration. Until the implementation is
 merged, use the component directory from the feature branch for manual testing.
 There is no release or HACS catalog listing.
 
