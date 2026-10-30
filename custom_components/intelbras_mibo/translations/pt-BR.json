@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Conectar sua conta Mibo",
-        "description": "Integração não oficial da comunidade para interruptores EIW 1003 (tecla 1).",
+        "description": "Integração não oficial da comunidade. Todos os interruptores EIW 1003 da conta e suas três teclas são adicionados automaticamente.",
         "data": {
           "email": "E-mail",
           "password": "Senha"
@@ -24,21 +24,13 @@
         "data": {
           "code": "Código de verificação"
         }
-      },
-      "devices": {
-        "title": "Selecionar interruptores",
-        "description": "Selecione pelo menos um interruptor compatível. Apenas a tecla 1 será disponibilizada.",
-        "data": {
-          "device_ids": "Interruptores"
-        }
       }
     },
     "error": {
       "invalid_auth": "Não foi possível entrar. Confira as credenciais da sua conta.",
       "cannot_connect": "Não foi possível conectar. Tente novamente mais tarde.",
       "invalid_code": "Não foi possível verificar o código. Confira e tente novamente.",
-      "account_mismatch": "Use a mesma conta da integração existente.",
-      "select_devices": "Selecione pelo menos uma opção disponível."
+      "account_mismatch": "Use a mesma conta da integração existente."
     },
     "abort": {
       "already_configured": "Esta conta já está configurada.",
@@ -47,24 +39,6 @@
       "cannot_connect": "Não foi possível buscar interruptores. Tente novamente mais tarde.",
       "invalid_auth": "A sessão foi rejeitada. Entre novamente.",
       "unique_id_mismatch": "Use a mesma conta da integração existente."
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Selecionar interruptores",
-        "description": "Interruptores ausentes permanecem selecionados até serem removidos. Selecione pelo menos um interruptor.",
-        "data": {
-          "device_ids": "Interruptores"
-        }
-      }
-    },
-    "error": {
-      "select_devices": "Selecione pelo menos uma opção disponível."
-    },
-    "abort": {
-      "cannot_connect": "Não foi possível buscar interruptores. Sua seleção foi mantida.",
-      "invalid_auth": "A sessão foi rejeitada. Autentique novamente antes de alterar os interruptores."
     }
   }
 }

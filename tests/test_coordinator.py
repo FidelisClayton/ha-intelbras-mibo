@@ -168,3 +168,81 @@ async def test_state_read_failure_keeps_validated_target_writable(hass, entry, c
     assert [api for api, _, _ in cloud.calls] == [
         'iot.control.SetIotProperties', 'iot.control.GetIotProperties']
     assert coordinator.data['switch-a']['127000']['api_state'] is True
+
+
+async def test_poll_adds_devices_once_persists_and_keeps_missing_after_restart(hass, entry, cloud):
+    from unittest.mock import patch
+    from homeassistant.helpers import device_registry as dr
+
+    await setup(hass, entry)
+    coordinator = entry.runtime_data.coordinator
+    cloud.devices['switch-c'] = dict(cloud.devices['switch-a'], deviceId='switch-c',
+                                    deviceName='Third synthetic switch')
+    cloud.states['switch-c'] = dict(cloud.states['switch-a'])
+    cloud.calls.clear()
+    with patch.object(hass.config_entries, 'async_reload', wraps=hass.config_entries.async_reload) as reload:
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=31))
+        await hass.async_block_till_done(wait_background_tasks=True)
+        ids = entities(hass, entry)
+        assert len(ids) == 9
+        assert len(hass.states.async_all('switch')) == 9
+        assert entry.options['device_ids'] == ['switch-a', 'switch-b', 'switch-c']
+        assert entry.runtime_data.coordinator is coordinator
+        assert not cloud.writes
+        reload.assert_not_called()
+        with patch.object(hass.config_entries, 'async_update_entry', wraps=hass.config_entries.async_update_entry) as update:
+            await coordinator.async_refresh()
+            await hass.async_block_till_done()
+            update.assert_not_called()
+        assert entities(hass, entry) == ids
+    cloud.calls.clear()
+    await coordinator.async_set('switch-c', True, key=3)
+    assert [api for api, _, _ in cloud.calls] == [
+        'iot.control.SetIotProperties', 'iot.control.GetIotProperties']
+    registry = dr.async_get(hass)
+    devices = {d.id: d for d in dr.async_entries_for_config_entry(registry, entry.entry_id)}
+    del cloud.devices['switch-c']
+    await coordinator.async_refresh()
+    assert entities(hass, entry) == ids
+    assert all(hass.states.get(ids[('switch-c', ref)]).state == 'unavailable'
+               for ref in ('11900', '127000', '127100'))
+    assert {d.id: d.name for d in dr.async_entries_for_config_entry(registry, entry.entry_id)} == {
+        key: value.name for key, value in devices.items()}
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entities(hass, entry) == ids
+    assert entry.options['device_ids'] == ['switch-a', 'switch-b', 'switch-c']
+    assert all(hass.states.get(ids[('switch-c', ref)]).state == 'unavailable'
+               for ref in ('11900', '127000', '127100'))
+    assert {d.id: d.name for d in dr.async_entries_for_config_entry(registry, entry.entry_id)} == {
+        key: value.name for key, value in devices.items()}
+
+
+@pytest.mark.parametrize('failure', ['network', 'auth', 'duplicate'])
+async def test_discovery_failure_never_changes_known_ids(hass, entry, cloud, failure):
+    await setup(hass, entry)
+    ids = entities(hass, entry)
+    options = dict(entry.options)
+    if failure == 'network':
+        cloud.list_failure = True
+    elif failure == 'auth':
+        cloud.list_code = '12112'
+    else:
+        cloud.devices['duplicate'] = cloud.devices['switch-a']
+    await entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert entry.options == options
+    assert entry.runtime_data.coordinator.device_ids == tuple(options['device_ids'])
+    assert entities(hass, entry) == ids
+
+
+async def test_unloaded_discovery_listener_cannot_add_entities(hass, entry, cloud):
+    await setup(hass, entry)
+    coordinator = entry.runtime_data.coordinator
+    ids = entities(hass, entry)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert not coordinator._listeners
+    coordinator.device_ids += ('switch-c',)
+    coordinator.async_set_updated_data({**coordinator.data, 'switch-c': {}})
+    await hass.async_block_till_done()
+    assert entities(hass, entry) == ids

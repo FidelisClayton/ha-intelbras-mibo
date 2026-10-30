@@ -1,4 +1,4 @@
-"""Native account setup, email verification, reauthentication, and selection."""
+"""Native account setup, email verification, and reauthentication."""
 
 from uuid import uuid4
 
@@ -23,24 +23,6 @@ def _credentials(email=None):
     })
 
 
-def _selection(devices, selected=()):
-    options = [{'value': key, 'label': f"{row['deviceName']} ({key})"}
-               for key, row in sorted(devices.items())]
-    options.extend({'value': key, 'label': f'{key} (unavailable)'}
-                   for key in sorted(set(selected) - devices.keys()))
-    return vol.Schema({vol.Required(CONF_DEVICE_IDS, default=list(selected)):
-                       selector.SelectSelector(selector.SelectSelectorConfig(
-                           options=options, multiple=True,
-                           mode=selector.SelectSelectorMode.LIST))})
-
-
-def _valid_selection(user_input, available):
-    values = user_input.get(CONF_DEVICE_IDS)
-    return (isinstance(values, list) and bool(values)
-            and all(isinstance(key, str) and key in available for key in values)
-            and len(set(values)) == len(values))
-
-
 class MiboConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Configure one account using only flow-local login credentials."""
 
@@ -56,11 +38,6 @@ class MiboConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._devices = {}
         self._reauth = False
         self._terminal = None
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry):
-        return MiboOptionsFlow()
 
     @callback
     def async_remove(self):
@@ -166,46 +143,8 @@ class MiboConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_update_reload_and_abort(entry, data=data)
         if not self._devices:
             return self.async_abort(reason='no_supported_devices')
-        return await self.async_step_devices()
-
-    async def async_step_devices(self, user_input=None):
-        errors = {}
-        if user_input is not None:
-            if _valid_selection(user_input, self._devices):
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=self._email, data={
-                    'email': self._email, 'account': canonical_account(self._email),
-                    'account_namespace': account_namespace(self._email), 'session': self._session,
-                }, options={CONF_DEVICE_IDS: user_input[CONF_DEVICE_IDS]})
-            errors['base'] = 'select_devices'
-        return self.async_show_form(step_id='devices', data_schema=_selection(self._devices), errors=errors)
-
-
-class MiboOptionsFlow(config_entries.OptionsFlow):
-    """Rediscover choices without dropping previously selected missing devices."""
-
-    def __init__(self):
-        self._devices = None
-
-    async def async_step_init(self, user_input=None):
-        entry = self.config_entry
-        selected = entry.options.get(CONF_DEVICE_IDS, [])
-        if self._devices is None:
-            runner = AccountRunner(self.hass, entry.data['email'])
-            try:
-                app = await async_load_app(self.hass)
-                def discover():
-                    client = Client.from_session(app, entry.data['session'])
-                    return Switches(client).discover()
-                self._devices = await runner.async_run(discover)
-            except MiboError as error:
-                return self.async_abort(reason='invalid_auth' if error.invalidate_session else 'cannot_connect')
-            finally:
-                await runner.async_close()
-        errors = {}
-        if user_input is not None:
-            if _valid_selection(user_input, set(self._devices) | set(selected)):
-                return self.async_create_entry(title='', data={CONF_DEVICE_IDS: user_input[CONF_DEVICE_IDS]})
-            errors['base'] = 'select_devices'
-        return self.async_show_form(step_id='init', errors=errors,
-                                    data_schema=_selection(self._devices, selected))
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(title=self._email, data={
+            'email': self._email, 'account': canonical_account(self._email),
+            'account_namespace': account_namespace(self._email), 'session': self._session,
+        }, options={CONF_DEVICE_IDS: list(self._devices)})

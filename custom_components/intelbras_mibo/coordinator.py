@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import CONF_DEVICE_IDS, DEFAULT_SCAN_INTERVAL, DOMAIN
 from .protocol import KEYS, MiboError, Switches, key_definition
 from .runtime import AccountRuntime, RuntimeClosed
 
@@ -32,7 +32,7 @@ class MiboCoordinator(DataUpdateCoordinator[Snapshots]):
     def _refresh(self) -> tuple[dict, Snapshots]:
         devices = self._switches.discover()
         snapshots = {}
-        for device_id in self.device_ids:
+        for device_id in dict.fromkeys((*self.device_ids, *devices)):
             try:
                 snapshots[device_id] = self._switches.status(device_id, devices)
             except MiboError as error:
@@ -54,7 +54,12 @@ class MiboCoordinator(DataUpdateCoordinator[Snapshots]):
             raise UpdateFailed('Unable to refresh the cloud device list.') from None
         except RuntimeClosed:
             raise UpdateFailed('The integration is unloading.') from None
-        self.devices = devices
+        self.devices.update(devices)
+        self.device_ids = tuple(snapshots)
+        if list(self.device_ids) != self.config_entry.options.get(CONF_DEVICE_IDS):
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                options={**self.config_entry.options, CONF_DEVICE_IDS: list(self.device_ids)})
         return snapshots
 
     async def async_set(self, device_id: str, desired: bool, *, key: int = 1) -> None:

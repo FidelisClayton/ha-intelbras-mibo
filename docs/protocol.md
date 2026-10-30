@@ -34,7 +34,7 @@ download; failure stops setup. A valid cache avoids upstream source access, but
 normal operation still requires the Mibo cloud. Use Home Assistant storage APIs,
 without manually changing `.storage` files.
 
-## Authentication and selection
+## Authentication and discovery
 
 ```mermaid
 flowchart TB
@@ -46,9 +46,8 @@ flowchart TB
   G --> A[Client.login: one attempt]
   A -->|success| D
   A -->|failure| F
-  D --> S[config_flow.py: select supported devices]
-  S --> E[Home Assistant config entry]
-  class CF,F,S frontend
+  D --> E[Home Assistant config entry: all supported devices]
+  class CF,F frontend
   class L,C,G,A,D controller
   class E store
   classDef controller fill:#2563eb,color:#fff,stroke:none
@@ -56,28 +55,28 @@ flowchart TB
   classDef store fill:#6b7280,color:#fff,stroke:none
 ```
 
-Source: `config_flow.py` credential, code, authentication, and selection steps;
+Source: `config_flow.py` credential, code, authentication, and discovery steps;
 `protocol.py` login, request-code, grant-code, and discovery methods.
 
 Only login error `12112` requests an email code. Submitting a code grants terminal
 trust and makes one login attempt; a failed code stays on the code form without
 sending another email. Passwords and verification codes stay in flow memory,
-without being persisted. An entry is created only after a nonempty valid device
-selection. Account identity is based on a trimmed, case-folded email; duplicate
-account entries are rejected.
+without being persisted. An entry is created only after discovery finds at least
+one supported device. Account identity is based on a trimmed, case-folded email;
+duplicate account entries are rejected.
 
 The config entry holds the email, canonical account, SHA-256 account namespace,
 and token session. The session contains its format version, token username,
-token, optional session ID, approved cloud host, and terminal ID. Selected cloud
-device IDs live in entry options. These are sensitive configuration data even
-though no password or code is stored.
+token, optional session ID, approved cloud host, and terminal ID. Known cloud
+device IDs are retained in entry options; last known names are retained through
+Home Assistant device and entity registries using their public APIs. These are
+sensitive configuration data even though no password or code is stored.
 
 A restored authenticated session rejected with HTTP 401 or API `12112` is marked
 invalid and requests Home Assistant reauthentication. Other errors, including
 HTTP 403, are not assumed to mean expiry. Reauthentication requires the original
-account and preserves terminal ID, selection, and entity identity. Options
-rediscover candidates, retain missing selections until removed, and reload the
-entry after a valid selection is saved.
+account and preserves terminal ID, known devices, and entity identity. There is
+no manual selection step or options filter.
 
 ## Transport and device validation
 
@@ -157,8 +156,8 @@ desired readback is also a failure. These checks establish cloud property state,
 not physical relay or load confirmation.
 
 `MiboCoordinator` polls every 30 seconds, sharing one discovery snapshot across
-selected devices. It parses each device's model once and validates and reads its
-three keys independently. Refresh also builds the per-device/per-key validated
+all supported devices plus retained known IDs. It parses each device's model
+once and validates and reads its three keys independently. Refresh also builds the per-device/per-key validated
 command metadata cache. Disappeared devices, replaced identities, and failed
 schema validation remove the corresponding old cached metadata. The cache has
 no separate persistence, TTL, or network fallback. A property read failure alone
@@ -182,7 +181,22 @@ the account namespace with cloud device ID; each entity adds its mapped property
 reference. Key 1 retains the existing `:11900` suffix byte-for-byte. All three
 entities are created even when a key's initial schema or read is unavailable.
 This keeps accounts separate and preserves identity across renames and reauth.
-Upgrades retain the stored account/session/options format and existing device
-and Key 1 registry records, including custom entity IDs and names. Options
-cleanup retains all three references for selected devices and removes all three
-for a deselected device; no new setup is required.
+Upgrades retain the stored account/session format, existing known IDs, and device
+and Key 1 registry records, including custom entity IDs and names. No new setup
+is required. Normal refresh unions all supported discovered IDs with the known
+IDs; it never replaces the known set with the current cloud list. Newly found
+IDs are persisted using Home Assistant config-entry APIs. Last known names are
+retained through the device and entity registries, without adding a names field
+to entry options.
+A missing device keeps its remembered name after restart and all three keys
+remain present but unavailable. Authentication or discovery failures do not
+remove known devices or registry records.
+
+The switch platform subscribes to coordinator updates and adds the three key
+entities for each new ID once per platform load. Repeated polls, cloud list
+reordering, renames, command publications, and a device returning online do not
+add duplicates. Unload unregisters that listener before the runtime is replaced.
+No discovery, setup, options, or unload path automatically deletes device or
+entity registry records. The additive-discovery plan supersedes the earlier
+manual-selection and deselection cleanup contract only; the direct cached-command
+contract above is unchanged.

@@ -29,18 +29,19 @@ async def test_selected_keys_and_account_scoped_registries(hass, entry, cloud):
         'switch', DOMAIN, f'{identity}:11900', config_entry=entry,
         device_id=existing_device.id, suggested_object_id='saved_key')
     existing = registry.async_update_entity(existing.entity_id, name='Custom key name')
-    saved_data, saved_options = dict(entry.data), dict(entry.options)
+    saved_data = dict(entry.data)
+    saved_options = {'device_ids': ['switch-a', 'switch-b']}
     await setup(hass, entry)
     records = er.async_entries_for_config_entry(registry, entry.entry_id)
-    assert len(records) == 3
-    record = next(r for r in records if r.unique_id.endswith(':11900'))
+    assert len(records) == 6
+    record = next(r for r in records if r.unique_id == f'{identity}:11900')
     assert record.unique_id == f'{account_namespace(entry.data["email"])}:switch-a:11900'
     assert (record.entity_id, record.unique_id, record.device_id, record.name) == (
         existing.entity_id, existing.unique_id, existing.device_id, 'Custom key name')
     assert entry.data == saved_data
     assert entry.options == saved_options
     assert {r.original_name for r in records} == {'Key 1', 'Key 2', 'Key 3'}
-    assert {r.device_id for r in records} == {existing_device.id}
+    assert existing_device.id in {r.device_id for r in records}
     assert hass.states.get(record.entity_id).state == 'off'
     device = dr.async_get(hass).async_get(record.device_id)
     assert device.identifiers == {(DOMAIN, f'{account_namespace(entry.data["email"])}:switch-a')}
@@ -65,32 +66,6 @@ async def test_selected_keys_and_account_scoped_registries(hass, entry, cloud):
     assert after == before
     assert entry.data == saved_data
     assert entry.options == saved_options
-
-
-async def test_options_reload_removes_only_deselected_entry_records(hass, entry, cloud):
-    await setup(hass, entry)
-    registry = er.async_get(hass)
-    other_email = 'other@example.test'
-    other = MockConfigEntry(domain=DOMAIN, unique_id=other_email,
-                            data=dict(entry.data, email=other_email, account=other_email,
-                                      account_namespace=account_namespace(other_email)),
-                            options={'device_ids': ['switch-a']})
-    other.add_to_hass(hass)
-    await setup(hass, other)
-    other_records = er.async_entries_for_config_entry(registry, other.entry_id)
-    before = {r.unique_id: r for r in er.async_entries_for_config_entry(registry, entry.entry_id)}
-    kept = [r for r in before.values() if 'switch-b' in r.unique_id]
-    cloud.devices['switch-b']['deviceName'] = 'Renamed test switch'
-    cloud.devices = dict(reversed(list(cloud.devices.items())))
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(result['flow_id'], {'device_ids': ['switch-b']})
-    await hass.async_block_till_done()
-    records = er.async_entries_for_config_entry(registry, entry.entry_id)
-    assert {r.entity_id for r in records} == {r.entity_id for r in kept}
-    assert len(hass.states.async_all('switch')) == 6
-    assert er.async_entries_for_config_entry(registry, other.entry_id) == other_records
-    assert len(dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)) == 1
-    assert entry.runtime_data.coordinator.data['switch-b']['11900']['name'] == 'Renamed test switch'
 
 
 async def test_setup_shared_failure_and_auth_failure(hass, entry, cloud):
@@ -155,9 +130,6 @@ async def test_native_user_setup_and_same_account_reauth_keep_entity_ids(hass, c
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={'source': SOURCE_USER},
         data={'email': 'new@example.test', 'password': 'test-password'})
-    assert result['step_id'] == 'devices'
-    result = await hass.config_entries.flow.async_configure(
-        result['flow_id'], {'device_ids': ['switch-a']})
     assert result['type'] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     entry = result['result']
@@ -178,9 +150,9 @@ async def test_native_user_setup_and_same_account_reauth_keep_entity_ids(hass, c
     assert entry.runtime_data is not old_runtime
     assert entry.data['account_namespace'] == namespace
     assert entry.data['session']['terminal_id'] == terminal
-    assert entry.options['device_ids'] == ['switch-a']
+    assert entry.options['device_ids'] == ['switch-a', 'switch-b']
     after = {r.unique_id: (r.entity_id, r.device_id)
              for r in er.async_entries_for_config_entry(registry, entry.entry_id)}
-    assert len(after) == 3
+    assert len(after) == 6
     assert after == before
     assert 'password' not in repr(entry.data)

@@ -33,20 +33,14 @@ async def start(hass, email=EMAIL):
                                                     data={'email': email, 'password': 'synthetic-password'})
 
 
-async def test_user_selection_and_no_secrets(hass, protocol):
+async def test_user_adds_all_supported_devices_and_no_secrets(hass, protocol):
     client, switches, _ = protocol
     result = await start(hass)
-    assert result['step_id'] == 'devices'
-    choices = result['data_schema'].schema['device_ids'].config['options']
-    assert {row['value'] for row in choices} == set(DEVICES)
-    assert len({row['label'] for row in choices}) == 2
-    empty = await hass.config_entries.flow.async_configure(result['flow_id'], {'device_ids': []})
-    assert empty['errors'] == {'base': 'select_devices'}
-    result = await hass.config_entries.flow.async_configure(result['flow_id'], {'device_ids': ['switch-a']})
     assert result['type'] == FlowResultType.CREATE_ENTRY
-    assert result['options'] == {'device_ids': ['switch-a']}
+    assert result['options'] == {'device_ids': ['switch-a', 'switch-b']}
     assert result['data']['session'] == SESSION
     assert result['result'].unique_id == EMAIL
+    assert not result['result'].supports_options
     assert 'password' not in repr(result['data'])
     assert 'synthetic-password' not in repr(result)
     assert switches.call_args.args[0] is client.from_session.return_value
@@ -64,15 +58,11 @@ async def test_mfa_finite_stages_and_bad_code(hass, protocol):
     assert result['errors'] == {'base': 'invalid_code'}
     assert client.return_value.login.call_count == 1
     result = await hass.config_entries.flow.async_configure(result['flow_id'], {'code': 'valid'})
-    assert result['step_id'] == 'devices'
+    assert result['type'] == FlowResultType.CREATE_ENTRY
+    assert result['options'] == {'device_ids': ['switch-a', 'switch-b']}
     assert client.return_value.login.call_count == 2
     client.return_value.request_code.assert_called_once()
-    flow = hass.config_entries.flow._progress[result['flow_id']]
-    assert flow._password is None
-    hass.config_entries.flow.async_abort(result['flow_id'])
-    await hass.async_block_till_done()
-    assert flow._client is None
-    assert flow._password is None
+    assert 'synthetic-password' not in repr(result)
 
 
 @pytest.mark.parametrize('code', ['api_12345', 'http_403', 'login_failure_no_retry'])
@@ -86,10 +76,14 @@ async def test_other_login_errors_never_request_mfa(hass, protocol, code):
 
 
 async def test_duplicate_and_concurrent_flow(hass, protocol):
+    client, _, _ = protocol
+    client.return_value.login.side_effect = MiboError('api_12112')
     result = await start(hass)
     duplicate = await start(hass, ' USER@EXAMPLE.TEST ')
     assert duplicate['reason'] == 'already_in_progress'
-    result = await hass.config_entries.flow.async_configure(result['flow_id'], {'device_ids': ['switch-a']})
+    client.return_value.login.side_effect = None
+    result = await hass.config_entries.flow.async_configure(result['flow_id'], {'code': 'valid'})
+    assert result['type'] == FlowResultType.CREATE_ENTRY
     duplicate = await start(hass)
     assert duplicate['reason'] == 'already_configured'
 
@@ -128,28 +122,6 @@ async def test_reauth_preserves_account_terminal_and_options(hass, protocol):
     assert client.call_args.args[1] == SESSION['terminal_id']
     assert entry.options['device_ids'] == ['switch-a', 'missing-switch']
     assert entry.unique_id == EMAIL
-
-
-async def test_options_preserve_missing_and_reject_empty(hass, protocol):
-    entry = existing(hass)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result['step_id'] == 'init'
-    choices = result['data_schema'].schema['device_ids'].config['options']
-    assert {row['value'] for row in choices} == {*DEVICES, 'missing-switch'}
-    result = await hass.config_entries.options.async_configure(result['flow_id'], {'device_ids': []})
-    assert result['errors'] == {'base': 'select_devices'}
-    result = await hass.config_entries.options.async_configure(result['flow_id'], {'device_ids': ['switch-b']})
-    assert result['type'] == FlowResultType.CREATE_ENTRY
-    assert entry.options == {'device_ids': ['switch-b']}
-
-
-async def test_options_failure_leaves_prior_options(hass, protocol):
-    _, switches, _ = protocol
-    entry = existing(hass)
-    switches.return_value.discover.side_effect = MiboError('network_error')
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result['reason'] == 'cannot_connect'
-    assert entry.options == {'device_ids': ['switch-a', 'missing-switch']}
 
 
 async def test_bootstrap_failure_and_hidden_password(hass, protocol):
@@ -225,7 +197,5 @@ async def test_protocol_filters_candidates_before_native_selection(hass, protoco
                  dict(rows[0], deviceId='invalid-switch', channelNum=True)])
     switches.return_value.discover.return_value = parse_devices(rows)
     result = await start(hass)
-    choices = result['data_schema'].schema['device_ids'].config['options']
-    assert {item['value'] for item in choices} == {'switch-a', 'switch-b'}
-    hass.config_entries.flow.async_abort(result['flow_id'])
-    await hass.async_block_till_done()
+    assert result['type'] == FlowResultType.CREATE_ENTRY
+    assert result['options'] == {'device_ids': ['switch-a', 'switch-b']}

@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Connect your Mibo account",
-        "description": "Unofficial community integration for EIW 1003 switches (key 1).",
+        "description": "Unofficial community integration. All EIW 1003 switches in the account and their three keys are added automatically.",
         "data": {
           "email": "Email",
           "password": "Password"
@@ -24,21 +24,13 @@
         "data": {
           "code": "Verification code"
         }
-      },
-      "devices": {
-        "title": "Select switches",
-        "description": "Select at least one supported switch. Only key 1 is exposed.",
-        "data": {
-          "device_ids": "Switches"
-        }
       }
     },
     "error": {
       "invalid_auth": "Unable to sign in. Check your account credentials.",
       "cannot_connect": "Unable to connect. Try again later.",
       "invalid_code": "The code could not be verified. Check it and try again.",
-      "account_mismatch": "Use the same account as the existing integration.",
-      "select_devices": "Select at least one available choice."
+      "account_mismatch": "Use the same account as the existing integration."
     },
     "abort": {
       "already_configured": "This account is already configured.",
@@ -47,24 +39,6 @@
       "cannot_connect": "Unable to discover switches. Try again later.",
       "invalid_auth": "The session was rejected. Sign in again.",
       "unique_id_mismatch": "Use the same account as the existing integration."
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Select switches",
-        "description": "Missing switches remain selected until you remove them. Select at least one switch.",
-        "data": {
-          "device_ids": "Switches"
-        }
-      }
-    },
-    "error": {
-      "select_devices": "Select at least one available choice."
-    },
-    "abort": {
-      "cannot_connect": "Unable to discover switches. Your selection has been kept.",
-      "invalid_auth": "The session was rejected. Reauthenticate before changing switches."
     }
   }
 }

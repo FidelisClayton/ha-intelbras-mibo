@@ -1,7 +1,7 @@
 # Intelbras Mibo for Home Assistant
 
 Unofficial community integration for cloud control of the **three individual
-keys on the Intelbras Mibo EIW 1003**. Each selected device exposes three native
+keys on the Intelbras Mibo EIW 1003**. Each discovered device exposes three native
 Home Assistant switches: **Key 1**, **Key 2**, and **Key 3**, under the same device.
 Cameras, master control, other models, and local-LAN control are outside its scope.
 
@@ -17,7 +17,7 @@ The implementation is on `feat/hacs-integration` in the public repository
 The bootstrap on `main` does not contain the integration. Until the implementation is
 merged, use the component directory from the feature branch for manual testing.
 Draft PR #1 remains open. There is no release or HACS catalog listing. Component
-version **0.2.1** identifies the direct-command test installation; it is not a tagged
+version **0.3.0** identifies the additive-discovery test installation; it is not a tagged
 release.
 
 ### Manual copy
@@ -52,30 +52,33 @@ implementation is merged into its default branch:
 3. If the cloud requests email verification, enter the code sent to your email.
    Only the specific cloud challenge `12112` opens this step. Retrying a code
    does not send another email.
-4. Select at least one supported EIW 1003. The selector includes device IDs to
-   distinguish switches with the same name. Cameras and unsupported identities
-   are omitted.
+4. Setup discovers all supported EIW 1003 devices in the account automatically.
+   At least one supported device is required for initial setup. Cameras and
+   unsupported identities are omitted.
 
-Each selected device gets **Key 1**, **Key 2**, and **Key 3** entities, usable with
+Each discovered device gets **Key 1**, **Key 2**, and **Key 3** entities, usable with
 normal Home Assistant switch actions. One integration entry is allowed per account.
 A key with an unvalidated schema or unreadable property remains unavailable;
 healthy sibling keys can still update and work. Later polling can recover the
 key without reconfiguration.
 
 When upgrading an existing entry, replace the component and restart Home
-Assistant. The existing account session, device selections, device identity, and
+Assistant. The existing account session, known device IDs, device identity, and
 Key 1 entity ID and customizations are preserved; no new setup or password entry
 is needed for the upgrade. Key 2 and Key 3 are added under the existing device.
 
-To change selected devices, open the entry's **Configure** options. At least one
-selection is required. Missing devices remain selected and unavailable until you
-explicitly remove them; a discovery error keeps the previous selection. Saving
-options reloads the entry and removes all three entities of each deselected
-device. Device renames and list reordering preserve entity identity.
+Every **30 seconds**, discovery adds newly found supported devices and their
+three key entities automatically. Known device IDs and last known names are
+retained across restarts, including while a device is offline. A disappeared or
+unreadable device becomes unavailable; it is never removed automatically from
+Home Assistant's device or entity registry. Cloud failures also retain known
+devices. Repeated discovery does not create duplicate entities. There is no
+manual device selector or options filter. Device renames and list reordering
+preserve entity identity.
 
 When Home Assistant requests reauthentication, sign in through its repair/setup
 prompt using the same account. Email verification may be requested again. A
-successful sign-in updates the existing entry and keeps selected devices and
+successful sign-in updates the existing entry and keeps known devices and
 entity identities. Passwords and email verification codes are not persisted.
 
 ## Cloud state and privacy
@@ -108,8 +111,8 @@ source download on later starts. A source mismatch fails setup rather than
 accepting changed constants.
 
 Home Assistant stores the account email, token session, terminal identifier,
-account namespace, and selected device IDs using its normal config-entry and
-storage APIs. Treat configuration backups as sensitive. No manual `.storage`
+account namespace, known device IDs, and last known names using its normal
+config-entry and storage APIs. Treat configuration backups as sensitive. No manual `.storage`
 changes or session-file imports are needed.
 
 ## Troubleshooting

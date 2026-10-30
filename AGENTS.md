@@ -14,6 +14,15 @@ The user-authorized direct cached-command plan in
 prior command preflight and already-satisfied no-op contract. Commands use normal
 refresh's cached identity and validated key metadata, fail locally if it is
 missing or invalid, and send one absolute write followed by bounded readback.
+The user-authorized additive-discovery plan in
+`docs/plans/2026-10-30-additive-device-discovery-plan.md` supersedes only the earlier
+manual device-selection and automatic registry-removal contracts. Every normal
+30-second discovery adds all supported EIW 1003 IDs to persisted known IDs.
+Persist last known names too; offline devices remain present and unavailable,
+including after restart. Never automatically delete device or entity registry
+records. Add three entities for each new ID once and unregister the discovery
+listener on unload. Do not add a manual selection or options filter. Native
+login, email-code, and same-account reauthentication forms remain unchanged.
 Keep the earlier plans unchanged as historical context.
 
 # Public repository
@@ -33,7 +42,7 @@ Target Home Assistant 2026.10.4 on Python 3.14.9 with
 pytest-homeassistant-custom-component 0.13.375. Use Home Assistant config entries,
 storage helpers, executor, and lifecycle APIs; never manually edit `.storage`
 files for authentication. Passwords and email codes must not be persisted. Treat
-saved sessions, device selections, and bootstrap constants as private data.
+saved sessions, known device IDs/names, and bootstrap constants as private data.
 
 # Checks
 

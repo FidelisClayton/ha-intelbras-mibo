@@ -84,8 +84,9 @@ allows native config-entry setup and switch-service control of all three keys
 using fakes. Check upgrade preservation of account/session/options, the device
 registry identity, and Key 1's entity ID and customizations, plus per-key schema
 and read failures, target-only command failure, and later poll recovery. Verify
-the options, same-account reauthentication, unload, and reload paths. The native
-forms require a separate browser smoke check. Record actual results and unresolved
+same-account reauthentication, unload, and reload paths. Initial native setup
+must create the entry for all supported devices without a manual selection or
+options-filter form. The native forms require a separate browser smoke check. Record actual results and unresolved
 prerequisites; do not describe unrun checks as passing.
 
 For documentation-only changes, review commands and installation paths against
@@ -113,8 +114,19 @@ integer `0`/`1` target-only write even for an already-matching state, and uses o
 the existing bounded readback afterward. Verify local rejection of missing or
 invalid metadata, cache invalidation and recovery on normal refresh, no write
 replay, and unchanged target-only failure and account-wide authentication paths.
-The initial first-key plan remains historical context. Version `0.2.1` identifies
-the direct-command component update for installation testing, not a tag or
+The [additive-discovery plan](plans/2026-10-30-additive-device-discovery-plan.md)
+supersedes only the earlier manual-selection and automatic registry-removal
+contracts. Its fake-backed tests must cover initial discovery of all supported
+devices, polling additions, persistence of known IDs and last known names,
+offline restart, and recovery without registry deletion. Assert three entities
+per new device, no duplicate additions after repeated or reordered lists,
+renames or command publications, and listener removal on unload. Discovery and
+authentication failures must retain known devices. A missing device is
+unavailable, including across restarts, and must not cause automatic entity or
+device registry deletion. Existing cached-command ordering, exactly one write,
+bounded readback, account serialization, and failure isolation remain covered.
+The initial first-key plan remains historical context. Version `0.3.0` identifies
+the additive-discovery component update for installation testing, not a tag or
 release. Installation and read-only verification results must be recorded
 separately from fake tests;
 do not claim an existing installation was upgraded until the parent verifies it.
