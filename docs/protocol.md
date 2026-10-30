@@ -96,22 +96,39 @@ server descriptions, response bodies, or authentication headers.
 Discovery accepts only model identifiers `IOT-EIW1003-IB` or `EIW1003`, complete
 nonempty device identity fields, an empty channel list, channel count zero, and a
 string gray flag. Invalid candidates are omitted independently. Before reading
-or writing, the model schema must expose exactly one `switch` property with
-reference `11900`, boolean type, and read/write access. Reads accept only integer
-or string `0` and `1`. No camera, channel, other-key, or master-control fallback
-is attempted.
+or writing a key, the model schema must validate its fixed mapping:
+
+| Entity | Identifier | Reference |
+| --- | --- | --- |
+| Key 1 | `switch` | `11900` |
+| Key 2 | `std_switch2` | `127000` |
+| Key 3 | `std_switch3` | `127100` |
+
+`protocol.py` defines this mapping in `KEYS`. Key arguments must be integers
+1–3; booleans and unknown keys are rejected before requests. Desired states
+must be booleans. Each identifier must occur exactly
+once, with its exact integer or string reference, `bool` data type, and `rw`
+access. No other property may share that reference. Model JSON may be an object
+or a JSON string; a malformed model container invalidates the device. Invalid
+metadata for one key leaves valid unrelated keys usable. Each validated key is
+read separately, accepting only integer or string `0` and `1`. No camera,
+channel, guessed-reference, or master-control fallback is attempted.
+
+Read-only cloud checks confirmed these properties and readable states. Schema
+support does not establish physical button order or relay operation. Only Key 1
+has prior physical validation; physical verification of Key 2 and Key 3 is pending.
 
 ## Commands and polling
 
 ```mermaid
 flowchart TB
-  S[switch.py: turn on or off] --> R[AccountRunner: serialized transaction]
-  R --> V[Switches.set: validate and read]
+  S[switch.py: target key on or off] --> R[AccountRunner: serialized transaction]
+  R --> V[Switches.set: validate and read target key]
   V -->|already desired| OK[coordinator.py: publish confirmed state]
-  V -->|state differs| W[SetIotProperties: one write]
+  V -->|state differs| W[SetIotProperties: one target reference]
   W --> B[GetIotProperties: bounded readback]
   B -->|desired state| OK
-  W -->|uncertain outcome| E[coordinator.py: unavailable and error]
+  W -->|uncertain outcome| E[coordinator.py: target unavailable and error]
   B -->|unconfirmed or failed| E
   class S frontend
   class R,OK,E controller
@@ -124,7 +141,8 @@ flowchart TB
 Source: `switch.py`, `runtime.py` account runner, `protocol.py` `Switches.set`,
 and `coordinator.py` `async_set`.
 
-A differing state triggers identity and schema revalidation before sending
+An absolute on/off command targets only its mapped property. A differing state
+triggers identity and target-key schema revalidation before sending
 `SetIotProperties`. Acknowledged writes get up to three readback attempts, with
 up to two seconds between reads and a five-second readback scheduling window.
 An individual transport request can extend beyond that window. Timeout or an
@@ -133,8 +151,13 @@ desired readback is also a failure. These checks establish cloud property state,
 not physical relay or load confirmation.
 
 `MiboCoordinator` polls every 30 seconds, sharing one discovery snapshot across
-selected devices and then checking each device's schema and state. A per-device
-failure makes that entity unavailable while healthy devices can update. Shared
+selected devices. It parses each device's model once and validates and reads its
+three keys independently. Snapshots are indexed by device ID and property
+reference. An invalid or unreadable key is unavailable while healthy sibling
+keys and other devices can update. A device-level failure makes all its keys
+unavailable. A non-auth command failure invalidates only its target key; a
+successful command replaces only that key's confirmed snapshot. Later polling
+can restore an unavailable key without replaying a write. Shared
 discovery/transport failures affect the account; invalid authentication starts
 reauthentication. Entity states are never updated optimistically after a write.
 
@@ -143,5 +166,11 @@ thread lock across clients for the same account. Complete discovery and command
 transactions are serialized, including after cancellation of an awaiting
 coroutine. Unload stops new work and publications, drains running work, and
 releases the runtime before replacement. Device and entity identities combine
-the account namespace with cloud device ID; the entity adds reference `11900`.
+the account namespace with cloud device ID; each entity adds its mapped property
+reference. Key 1 retains the existing `:11900` suffix byte-for-byte. All three
+entities are created even when a key's initial schema or read is unavailable.
 This keeps accounts separate and preserves identity across renames and reauth.
+Upgrades retain the stored account/session/options format and existing device
+and Key 1 registry records, including custom entity IDs and names. Options
+cleanup retains all three references for selected devices and removes all three
+for a deselected device; no new setup is required.

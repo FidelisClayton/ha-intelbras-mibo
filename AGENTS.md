@@ -1,10 +1,14 @@
 # Scope
 
 This is a standalone, shareable Home Assistant custom integration. Support is
-cloud control of the Intelbras Mibo EIW 1003 first key, property 11900. Keep runtime
-files under `custom_components/intelbras_mibo/`, independent of any CLI, private
+cloud control of the three individual Intelbras Mibo EIW 1003 keys: Key 1
+(`switch` / `11900`), Key 2 (`std_switch2` / `127000`), and Key 3
+(`std_switch3` / `127100`). Keep runtime files under `custom_components/intelbras_mibo/`, independent of any CLI, private
 configuration, subprocess, separate service, or published Python package. Do not
-expand support to cameras, other keys, master control, or local-LAN protocols.
+expand support to cameras, other models, master control, or local-LAN protocols.
+The three-key extension plan in
+`docs/plans/2026-10-30-1611-feat-three-switch-keys-plan.md` supersedes the initial
+plan's first-key-only boundary; retain the initial plan as historical context.
 
 # Public repository
 
@@ -51,8 +55,10 @@ Always record the checks actually run and any skipped or blocked verification.
 Workers must not make cloud calls or actuate devices. Only the parent thread may
 perform live validation, limited to key 1 of the uniquely pinned switch on the
 existing Home Assistant host, as identified privately in the parent thread.
-Read-only device discovery is allowed to select that switch. Do not actuate
-other devices during live verification; normal user-configured discovery is part
-of the integration contract. Keep existing authentication, other integrations,
+Read-only device discovery is allowed to select that switch. The three-key
+software boundary does not authorize automatic actuation of keys 2/3. Only a new
+explicit user grant can expand live actuation beyond the privately pinned key 1.
+Do not actuate other devices during live verification; normal user-configured
+discovery is part of the integration contract. Keep existing authentication, other integrations,
 credentials, and networking intact. Missing private inputs block live validation,
 not isolated fake-backed work.

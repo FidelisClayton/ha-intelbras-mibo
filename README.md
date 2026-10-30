@@ -1,8 +1,9 @@
 # Intelbras Mibo for Home Assistant
 
-Unofficial community integration for cloud control of **key 1 on the Intelbras
-Mibo EIW 1003**. Each selected device exposes one native Home Assistant switch.
-Cameras, keys 2 and 3, master control, and local-LAN control are outside its scope.
+Unofficial community integration for cloud control of the **three individual
+keys on the Intelbras Mibo EIW 1003**. Each selected device exposes three native
+Home Assistant switches: **Key 1**, **Key 2**, and **Key 3**, under the same device.
+Cameras, master control, other models, and local-LAN control are outside its scope.
 
 The compatibility target is Home Assistant **2026.10.4** on Python **3.14.9**.
 Other versions are not verified. The integration runs entirely from
@@ -15,7 +16,9 @@ The implementation is on `feat/hacs-integration` in the public repository
 [`FidelisClayton/ha-intelbras-mibo`](https://github.com/FidelisClayton/ha-intelbras-mibo).
 The bootstrap on `main` does not contain the integration. Until the implementation is
 merged, use the component directory from the feature branch for manual testing.
-There is no release or HACS catalog listing.
+Draft PR #1 remains open. There is no release or HACS catalog listing. Component
+version **0.2.0** identifies the three-key test installation; it is not a tagged
+release.
 
 ### Manual copy
 
@@ -53,14 +56,22 @@ implementation is merged into its default branch:
    distinguish switches with the same name. Cameras and unsupported identities
    are omitted.
 
-Each selected device gets a **Key 1** entity, usable with normal Home Assistant
-switch actions. One integration entry is allowed per account.
+Each selected device gets **Key 1**, **Key 2**, and **Key 3** entities, usable with
+normal Home Assistant switch actions. One integration entry is allowed per account.
+A key with an unvalidated schema or unreadable property remains unavailable;
+healthy sibling keys can still update and work. Later polling can recover the
+key without reconfiguration.
+
+When upgrading an existing entry, replace the component and restart Home
+Assistant. The existing account session, device selections, device identity, and
+Key 1 entity ID and customizations are preserved; no new setup or password entry
+is needed for the upgrade. Key 2 and Key 3 are added under the existing device.
 
 To change selected devices, open the entry's **Configure** options. At least one
 selection is required. Missing devices remain selected and unavailable until you
 explicitly remove them; a discovery error keeps the previous selection. Saving
-options reloads the entry and removes deselected entities. Device renames and
-list reordering preserve entity identity.
+options reloads the entry and removes all three entities of each deselected
+device. Device renames and list reordering preserve entity identity.
 
 When Home Assistant requests reauthentication, sign in through its repair/setup
 prompt using the same account. Email verification may be requested again. A
@@ -69,13 +80,20 @@ entity identities. Passwords and email verification codes are not persisted.
 
 ## Cloud state and privacy
 
-The integration polls the cloud every **30 seconds**. A command validates the
-device and property schema, reads the current state, and sends at most one write.
+The integration polls the cloud every **30 seconds**. Account transactions are
+serialized. An absolute on/off command validates the device and target key
+schema, reads that key's current state, and sends at most one write to its property.
 If the desired state is already present, it sends no write. State is updated only
 after a cloud read confirms it. A timeout or unconfirmed write reports an error
 and makes the affected entity unavailable; later polling can recover it without
 replaying the write. Cloud readback does not independently confirm the physical
 relay or connected load.
+
+The key mapping is `switch` / `11900` for Key 1, `std_switch2` / `127000` for
+Key 2, and `std_switch3` / `127100` for Key 3. Read-only cloud checks confirmed
+these boolean read/write properties and readable states. This establishes schema
+support, not physical button order. Only Key 1 has prior physical validation;
+physical verification of Key 2 and Key 3 remains pending.
 
 Internet access to the Mibo cloud is required. Cold setup also downloads a pinned
 upstream Swift source file, verifies its SHA-256 digest, and extracts six static

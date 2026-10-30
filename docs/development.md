@@ -27,7 +27,7 @@ The script forwards arguments to pytest. For example:
 
 ```sh
 scripts/check tests/test_config_flow.py
-scripts/check tests/test_switch.py tests/test_init.py
+scripts/check tests/test_protocol.py tests/test_coordinator.py tests/test_switch.py tests/test_init.py
 ```
 
 An alternate environment can be selected with `PYTHON=/path/to/python
@@ -80,7 +80,10 @@ establish either validation result or live device behavior.
 
 Before accepting the integration, also check that copying only
 `custom_components/intelbras_mibo/` into a fresh pinned Home Assistant instance
-allows native config-entry setup and switch-service control using fakes. Verify
+allows native config-entry setup and switch-service control of all three keys
+using fakes. Check upgrade preservation of account/session/options, the device
+registry identity, and Key 1's entity ID and customizations, plus per-key schema
+and read failures, target-only command failure, and later poll recovery. Verify
 the options, same-account reauthentication, unload, and reload paths. The native
 forms require a separate browser smoke check. Record actual results and unresolved
 prerequisites; do not describe unrun checks as passing.
@@ -91,10 +94,24 @@ merely repeat documentation text.
 
 Live validation is separate from fake-backed checks. Workers may not contact the
 cloud or actuate devices. Only the parent thread may use the privately authorized
-Home Assistant installation and key-1 switch, through normal authentication and
-supported Home Assistant APIs. Missing authorization or private setup inputs
-block live verification, not offline tests. Do not edit authentication storage,
+Home Assistant installation and pinned key-1 switch, through normal authentication
+and supported Home Assistant APIs. Three-key software support does not expand
+that actuation authorization. Do not automatically actuate keys 2/3; expanding
+live actuation requires a new explicit user grant. Read-only schema and state
+checks establish property support, not physical button order or relay operation.
+Only Key 1 has prior physical validation; Key 2 and Key 3 still require user
+physical verification after installation. Missing authorization or private setup
+inputs block live verification, not offline tests. Do not edit authentication storage,
 other integrations, networking, or credentials to make validation work.
+
+The three-key support boundary is governed by
+[the extension plan](plans/2026-10-30-1611-feat-three-switch-keys-plan.md).
+The initial first-key plan remains historical context. Version `0.2.0` identifies
+the component update for installation testing, not a tag or release. Installation
+and read-only verification results must be recorded separately from fake tests;
+do not claim an existing installation was upgraded until the parent verifies it.
+The implementation remains on `feat/hacs-integration` with draft PR #1 open;
+`main` contains the bootstrap, and HACS default-branch installation requires merge.
 
 ## Contributions and privacy
 
