@@ -23,4 +23,6 @@ for authentication. Automated tests must use fakes, without real sessions.
 Workers must not make cloud calls or actuate devices. Only the parent thread may
 perform live validation, limited to key 1 of the uniquely pinned switch on the
 existing Home Assistant host, as identified privately in the parent thread.
-Do not discover or operate other devices.
+Read-only device discovery is allowed to select that switch. Do not actuate
+other devices during live verification; normal user-configured discovery is part
+of the integration contract.
