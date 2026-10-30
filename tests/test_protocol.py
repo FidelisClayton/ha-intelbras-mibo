@@ -122,13 +122,16 @@ def state(value, ref="11900"):
 class SwitchTests(unittest.TestCase):
     def switches(self, fake):
         return Switches(Client(APP, 't', fake), sleep=lambda _: None)
-    def test_absolute_single_write_contract_and_idempotence(self):
+    def test_absolute_single_write_contract_including_already_desired(self):
         for key, identifier, ref in [(1, 'switch', '11900'), (2, 'std_switch2', '127000'),
                                      (3, 'std_switch3', '127100')]:
             schema = {'modelJson': {'properties': [{'identifier': identifier, 'ref': ref,
                        'dataType': {'type': 'bool'}, 'accessMode': 'rw'}]}}
-            fake = Fake(devices(D), ok(schema), state(1, ref), devices(D), ok(schema), ok(), state('0', ref))
-            result = self.switches(fake).set('id-1', False, key=key)
+            fake = Fake(devices(D), ok(schema), state(1, ref), ok(), state('0', ref))
+            switches = self.switches(fake)
+            switches.status('id-1')
+            fake.requests.clear()
+            result = switches.set('id-1', False, key=key)
             writes = [r for r in fake.requests if r[0] == 'iot.control.SetIotProperties']
             self.assertEqual(len(writes), 1)
             self.assertEqual(writes[0][1], {'deviceId': 'id-1', 'productId': 'product-1', 'properties': {ref: 0}})
@@ -136,18 +139,22 @@ class SwitchTests(unittest.TestCase):
             self.assertEqual(writes[0][2]['x-pcs-apiver'], '56906')
             self.assertTrue(result['command_acknowledged'])
             self.assertIs(result['api_state'], False)
-            fake = Fake(devices(D), ok(schema), state(0, ref))
-            self.assertFalse(self.switches(fake).set('id-1', False, key=key)['write_sent'])
-            self.assertEqual(len(fake.requests), 3)
+            self.assertEqual([r[0] for r in fake.requests], ['iot.control.SetIotProperties', 'iot.control.GetIotProperties'])
+            fake.responses.extend([ok(), state(0, ref)])
+            fake.requests.clear()
+            self.assertTrue(switches.set('id-1', False, key=key)['write_sent'])
+            self.assertEqual([r[0] for r in fake.requests], ['iot.control.SetIotProperties', 'iot.control.GetIotProperties'])
     def test_uncertain_or_unconfirmed_never_rewrites(self):
         for key, identifier, ref in [(1, 'switch', '11900'), (2, 'std_switch2', '127000'),
                                      (3, 'std_switch3', '127100')]:
             schema = {'modelJson': {'properties': [{'identifier': identifier, 'ref': ref,
                        'dataType': {'type': 'bool'}, 'accessMode': 'rw'}]}}
             for tail in [(TimeoutError(),), (ok(), state(1, ref), state(1, ref), state(1, ref)), (ok(), ValueError('PRIVATE'))]:
-                fake = Fake(devices(D), ok(schema), state(1, ref), devices(D), ok(schema), *tail)
+                fake = Fake(devices(D), ok(schema), state(1, ref), *tail)
+                switches = self.switches(fake)
+                switches.status('id-1')
                 with self.assertRaises(MiboError) as error:
-                    self.switches(fake).set('id-1', False, key=key)
+                    switches.set('id-1', False, key=key)
                 self.assertEqual(error.exception.exit_code, 6)
                 self.assertEqual(sum(r[0].endswith('SetIotProperties') for r in fake.requests), 1)
                 self.assertNotIn('PRIVATE', str(error.exception))
@@ -157,12 +164,14 @@ class SwitchTests(unittest.TestCase):
         for rows in [(D, D), ({**D, 'channelNum': False},), ({**D, 'deviceModelName': 'camera'},), ({**D, 'productId': ''},)]:
             fake = Fake(devices(*rows))
             with self.assertRaises(MiboError):
-                self.switches(fake).set('id-1', False, key=1)
+                self.switches(fake).status('id-1')
             self.assertEqual(len(fake.requests), 1)
         for prop in [{}, {'identifier': 'switch', 'ref': 11901, 'dataType': {'type': 'bool'}, 'accessMode': 'rw'}]:
             fake = Fake(devices(D), ok({'modelJson': {'properties': [prop]}}))
             with self.assertRaises(MiboError):
-                self.switches(fake).set('id-1', True, key=1)
+                switches = self.switches(fake)
+                switches.status('id-1')
+                switches.set('id-1', True, key=1)
             self.assertEqual(len(fake.requests), 2)
         for value in [True, None, 2, 'true', {}]:
             self.assertIsNone(self.switches(Fake(devices(D), ok(SCHEMA), state(value))).status('id-1')['11900'])
@@ -177,9 +186,13 @@ class SwitchTests(unittest.TestCase):
         fake = Fake(devices(D, other), ok(SCHEMA), state(0))
         self.assertEqual(self.switches(fake).status('id-1')['11900']['device_id'], 'id-1')
         fake = Fake(devices(D), ok(SCHEMA), state(1), devices({**D, 'productId': 'changed'}))
+        switches = self.switches(fake)
+        switches.status('id-1')
+        switches.discover()
+        before = len(fake.requests)
         with self.assertRaises(MiboError):
-            self.switches(fake).set('id-1', False, key=1)
-        self.assertEqual(len(fake.requests), 4)
+            switches.set('id-1', False, key=1)
+        self.assertEqual(len(fake.requests), before)
     def test_schema_allows_bool_metadata_and_preserves_gray_flag(self):
         device = {**D, 'grayFlag': 'fixture-gray'}
         schema = {'modelJson': {'properties': [{'identifier': 'switch', 'ref': '11900', 'dataType': {'type': 'bool', 'specs': {'0': 'off', '1': 'on'}}, 'accessMode': 'rw'}]}}
@@ -187,14 +200,16 @@ class SwitchTests(unittest.TestCase):
         self.assertTrue(self.switches(fake).status('id-1')['11900']['api_state'])
         self.assertEqual(fake.requests[1][1], {'productId': 'product-1', 'grayFlag': 'fixture-gray'})
     def test_provider_rejection_is_distinct_from_transport_uncertainty(self):
-        fake = Fake(devices(D), ok(SCHEMA), state(1), devices(D), ok(SCHEMA), {'code': 22001, 'desc': 'PRIVATE'})
+        fake = Fake(devices(D), ok(SCHEMA), state(1), {'code': 22001, 'desc': 'PRIVATE'})
+        switches = self.switches(fake)
+        switches.status('id-1')
         with self.assertRaises(MiboError) as error:
-            self.switches(fake).set('id-1', False, key=1)
+            switches.set('id-1', False, key=1)
         self.assertEqual(error.exception.code, 'api_22001')
         self.assertEqual(error.exception.exit_code, 5)
         self.assertTrue(error.exception.result['write_sent'])
         self.assertFalse(error.exception.result['command_acknowledged'])
-        self.assertEqual(len(fake.requests), 6)
+        self.assertEqual(len(fake.requests), 4)
     def test_discovery_uses_ids_and_excludes_invalid_rows(self):
         invalid = {**D, 'deviceId': 'bad', 'channelNum': False}
         other = {**D, 'deviceId': 'other'}
@@ -219,8 +234,9 @@ class SwitchTests(unittest.TestCase):
                        host='app-br.easy4ipcloud.com', terminal_id='terminal')
         for responses, code, acknowledged in [([MiboError('http_401')], 3, False),
                                                 ([ok(), MiboError('http_401')], 6, True)]:
-            fake = Fake(devices(D), ok(SCHEMA), state(1), devices(D), ok(SCHEMA), *responses)
+            fake = Fake(devices(D), ok(SCHEMA), state(1), *responses)
             switches = Switches(Client.from_session(APP, session, fake), sleep=lambda _: None)
+            switches.status('id-1')
             with self.assertRaises(MiboError) as error:
                 switches.set('id-1', False, key=1)
             self.assertEqual(error.exception.exit_code, code)
@@ -247,8 +263,13 @@ class SwitchTests(unittest.TestCase):
                        'dataType': {'type': 'bool'}, 'accessMode': 'rw'}]}}
             bad_schema = {'modelJson': {'properties': []}}
             fake = Fake(devices(D), ok(schema), state(0, ref), devices(D), ok(bad_schema))
+            switches = self.switches(fake)
+            switches.status('id-1')
+            switches.status('id-1')
+            before = len(fake.requests)
             with self.assertRaisesRegex(MiboError, 'unsupported_switch_schema'):
-                self.switches(fake).set('id-1', True, key=key)
+                switches.set('id-1', True, key=key)
+            self.assertEqual(len(fake.requests), before)
             self.assertFalse(any(r[0] == 'iot.control.SetIotProperties' for r in fake.requests))
 
     def test_nonboolean_writes_do_not_touch_network(self):
@@ -260,11 +281,12 @@ class SwitchTests(unittest.TestCase):
                 self.assertEqual(fake.requests, [])
 
     def test_confirmation_stops_after_polling_deadline(self):
-        fake = Fake(devices(D), ok(SCHEMA), state(0), devices(D), ok(SCHEMA), ok(), state(0))
+        fake = Fake(devices(D), ok(SCHEMA), state(0), ok(), state(0))
         now = [0]
         def advance(_):
             now[0] = 5
         switches = Switches(Client(APP, 't', fake), clock=lambda: now[0], sleep=advance)
+        switches.status('id-1')
         with self.assertRaisesRegex(MiboError, 'accepted_state_unconfirmed'):
             switches.set('id-1', True)
         self.assertEqual(sum(r[0] == 'iot.control.GetIotProperties' for r in fake.requests), 2)
@@ -317,16 +339,17 @@ def test_invalid_key_metadata_isolated_and_blocks_write(string_model, ref_type, 
     model = {'properties': props}
     schema = {'modelJson': json.dumps(model) if string_model else model}
     fake = Fake(devices(D), ok(schema), state(1), state('0', '127100'))
-    result = Switches(Client(APP, 't', fake)).status('id-1')
+    switches = Switches(Client(APP, 't', fake))
+    result = switches.status('id-1')
     assert result['11900']['api_state'] is True
     assert result['127000'] is None
     assert result['127100']['api_state'] is False
     assert [r[1]['properties'] for r in fake.requests if r[0].endswith('GetIotProperties')] == [
         ['11900'], ['127100']]
-    fake = Fake(devices(D), ok(schema))
+    fake.requests.clear()
     with pytest.raises(MiboError, match='unsupported_switch_schema'):
-        Switches(Client(APP, 't', fake)).set('id-1', True, key=2)
-    assert len(fake.requests) == 2
+        switches.set('id-1', True, key=2)
+    assert fake.requests == []
 
 
 @pytest.mark.parametrize('key,identifier,ref', [(1, 'switch', '11900'),
@@ -338,10 +361,12 @@ def test_each_key_strict_binary_reads(key, identifier, ref, value):
                'dataType': {'type': 'bool'}, 'accessMode': 'rw'}]}}
     fake = Fake(devices(D), ok(schema), state(value, ref))
     assert Switches(Client(APP, 't', fake)).status('id-1')[ref] is None
-    fake = Fake(devices(D), ok(schema), state(value, ref))
-    with pytest.raises(MiboError, match='switch_state_not_binary'):
-        Switches(Client(APP, 't', fake)).set('id-1', True, key=key)
-    assert not any(r[0].endswith('SetIotProperties') for r in fake.requests)
+    fake = Fake(devices(D), ok(schema), state(value, ref), ok(), state(1, ref))
+    switches = Switches(Client(APP, 't', fake))
+    switches.status('id-1')
+    fake.requests.clear()
+    assert switches.set('id-1', True, key=key)['api_state'] is True
+    assert [r[0] for r in fake.requests] == ['iot.control.SetIotProperties', 'iot.control.GetIotProperties']
 
 
 @pytest.mark.parametrize('value', [0, 1, '0', '1'])
@@ -362,3 +387,54 @@ def test_three_key_string_schema_parsed_once_and_read_separately(value):
     reads = [r for r in fake.requests if r[0] == 'iot.control.GetIotProperties']
     assert [r[1]['properties'] for r in reads] == [['11900'], ['127000'], ['127100']]
     assert all(r[2]['x-pcs-apiver'] == '56906' for r in reads)
+
+
+@pytest.mark.parametrize('key', [1, 2, 3])
+def test_uncached_command_fails_without_any_network_call(key):
+    fake = Fake()
+    with pytest.raises(MiboError):
+        Switches(Client(APP, 't', fake)).set('id-1', True, key=key)
+    assert fake.requests == []
+
+
+@pytest.mark.parametrize('rows', [[], [{**D, 'productId': 'changed'}],
+                                  [{**D, 'deviceModelName': 'camera'}]])
+def test_discovery_invalidates_previous_target(rows):
+    fake = Fake(devices(D), ok(SCHEMA), state(0), devices(*rows))
+    switches = Switches(Client(APP, 't', fake))
+    switches.status('id-1')
+    switches.discover()
+    fake.requests.clear()
+    with pytest.raises(MiboError):
+        switches.set('id-1', True)
+    assert fake.requests == []
+
+
+@pytest.mark.parametrize('failure', [ok({'modelJson': {'properties': []}}),
+                                   ok({'modelJson': 'invalid json'}), {'code': 50000}])
+def test_schema_refresh_failure_removes_previous_validation(failure):
+    fake = Fake(devices(D), ok(SCHEMA), state(0), failure)
+    switches = Switches(Client(APP, 't', fake))
+    switches.status('id-1')
+    snapshot = {'id-1': dict(deviceId='id-1', productId='product-1',
+                            deviceName='Fixture switch', model='IOT-EIW1003-IB', grayFlag='')}
+    try:
+        switches.status('id-1', snapshot)
+    except MiboError:
+        pass
+    fake.requests.clear()
+    with pytest.raises(MiboError):
+        switches.set('id-1', True)
+    assert fake.requests == []
+
+
+def test_validated_identity_is_copied_from_discovery_snapshot():
+    fake = Fake(devices(D), ok(SCHEMA), state(0), ok(), state(1))
+    switches = Switches(Client(APP, 't', fake))
+    snapshot = switches.discover()
+    switches.status('id-1', snapshot)
+    snapshot['id-1']['productId'] = 'changed'
+    fake.requests.clear()
+    assert switches.set('id-1', True)['api_state'] is True
+    assert fake.requests[0][1]['productId'] == 'product-1'
+    assert [r[0] for r in fake.requests] == ['iot.control.SetIotProperties', 'iot.control.GetIotProperties']

@@ -17,7 +17,7 @@ The implementation is on `feat/hacs-integration` in the public repository
 The bootstrap on `main` does not contain the integration. Until the implementation is
 merged, use the component directory from the feature branch for manual testing.
 Draft PR #1 remains open. There is no release or HACS catalog listing. Component
-version **0.2.0** identifies the three-key test installation; it is not a tagged
+version **0.2.1** identifies the direct-command test installation; it is not a tagged
 release.
 
 ### Manual copy
@@ -81,13 +81,18 @@ entity identities. Passwords and email verification codes are not persisted.
 ## Cloud state and privacy
 
 The integration polls the cloud every **30 seconds**. Account transactions are
-serialized. An absolute on/off command validates the device and target key
-schema, reads that key's current state, and sends at most one write to its property.
-If the desired state is already present, it sends no write. State is updated only
-after a cloud read confirms it. A timeout or unconfirmed write reports an error
+serialized. An absolute on/off command uses the device identity and validated
+target-key metadata cached by normal polling. With a valid cache, its first cloud
+request writes integer `0` or `1` to that key, even when the last confirmed state
+already matches. It makes no discovery, schema, or state requests before that
+write. Missing or invalid cached metadata fails locally until polling restores
+it. Each accepted command sends exactly one write; state is updated only after
+bounded cloud readback confirms it. A timeout or unconfirmed write reports an error
 and makes the affected entity unavailable; later polling can recover it without
 replaying the write. Cloud readback does not independently confirm the physical
-relay or connected load.
+relay or connected load. The 30-second poll and account serialization are
+unchanged, so a command can still wait for a running refresh. This change does
+not establish total command latency.
 
 The key mapping is `switch` / `11900` for Key 1, `std_switch2` / `127000` for
 Key 2, and `std_switch3` / `127100` for Key 3. Read-only cloud checks confirmed

@@ -24,6 +24,7 @@ class Cloud:
         self.list_code = None
         self.list_failure = False
         self.write_failures = set()
+        self.write_code = None
         self.confirm_writes = True
         self.calls = []
         self.write_started = None
@@ -49,13 +50,14 @@ class Cloud:
             value = self.states[device][ref]
             response = {'properties': {ref: int(value) if type(value) is bool else value}}
         elif api == 'iot.control.SetIotProperties':
+            code = self.write_code or code
             if self.write_started:
                 self.write_started.set()
                 assert self.write_release.wait(10)
             ref, = data['properties']
             if (data['deviceId'], ref) in self.write_failures:
                 raise OSError('synthetic transport failure')
-            if self.confirm_writes:
+            if self.confirm_writes and code == '10000':
                 self.states[data['deviceId']][ref] = bool(data['properties'][ref])
         elif api == 'user.account.GetToken':
             response = {'username': 'test-user', 'token': 'test-token'}

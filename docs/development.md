@@ -106,9 +106,17 @@ other integrations, networking, or credentials to make validation work.
 
 The three-key support boundary is governed by
 [the extension plan](plans/2026-10-30-1611-feat-three-switch-keys-plan.md).
-The initial first-key plan remains historical context. Version `0.2.0` identifies
-the component update for installation testing, not a tag or release. Installation
-and read-only verification results must be recorded separately from fake tests;
+The [direct cached-command plan](plans/2026-10-30-direct-cached-switch-commands-plan.md)
+supersedes only the earlier command preflight and no-op contract. Its tests must
+assert that a warmed command starts with `SetIotProperties`, sends exactly one
+integer `0`/`1` target-only write even for an already-matching state, and uses only
+the existing bounded readback afterward. Verify local rejection of missing or
+invalid metadata, cache invalidation and recovery on normal refresh, no write
+replay, and unchanged target-only failure and account-wide authentication paths.
+The initial first-key plan remains historical context. Version `0.2.1` identifies
+the direct-command component update for installation testing, not a tag or
+release. Installation and read-only verification results must be recorded
+separately from fake tests;
 do not claim an existing installation was upgraded until the parent verifies it.
 The implementation remains on `feat/hacs-integration` with draft PR #1 open;
 `main` contains the bootstrap, and HACS default-branch installation requires merge.

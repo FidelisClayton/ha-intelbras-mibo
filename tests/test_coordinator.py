@@ -129,3 +129,42 @@ async def test_duplicate_device_identity_fails_snapshot_and_recovers(hass, entry
     await entry.runtime_data.coordinator.async_refresh()
     assert entities(hass, entry) == ids
     assert all(hass.states.get(entity).state in ('on', 'off') for entity in ids.values())
+
+
+@pytest.mark.parametrize('failure', ['removed', 'unsupported', 'schema', 'model_failure'])
+async def test_refresh_invalidates_warm_command_target_without_fallback(hass, entry, cloud, failure):
+    await setup(hass, entry)
+    ids = entities(hass, entry)
+    coordinator = entry.runtime_data.coordinator
+    product = cloud.devices['switch-a']['productId']
+    if failure == 'removed':
+        del cloud.devices['switch-a']
+    elif failure == 'unsupported':
+        cloud.devices['switch-a']['deviceModel'] = 'camera'
+    elif failure == 'schema':
+        cloud.models[product]['properties'][1]['accessMode'] = 'r'
+    else:
+        cloud.model_failures[product] = '50000'
+    await coordinator.async_refresh()
+    cloud.calls.clear()
+    with pytest.raises(HomeAssistantError, match='could not be confirmed'):
+        await coordinator.async_set('switch-a', True, key=2)
+    assert cloud.calls == []
+    assert hass.states.get(ids[('switch-a', '127000')]).state == 'unavailable'
+    assert hass.states.get(ids[('switch-b', '127000')]).state == 'on'
+    if failure == 'schema':
+        assert hass.states.get(ids[('switch-a', '11900')]).state == 'off'
+        assert hass.states.get(ids[('switch-a', '127100')]).state == 'off'
+
+
+async def test_state_read_failure_keeps_validated_target_writable(hass, entry, cloud):
+    await setup(hass, entry)
+    coordinator = entry.runtime_data.coordinator
+    cloud.read_failures[('switch-a', '127000')] = '50000'
+    await coordinator.async_refresh()
+    cloud.read_failures.clear()
+    cloud.calls.clear()
+    await coordinator.async_set('switch-a', True, key=2)
+    assert [api for api, _, _ in cloud.calls] == [
+        'iot.control.SetIotProperties', 'iot.control.GetIotProperties']
+    assert coordinator.data['switch-a']['127000']['api_state'] is True

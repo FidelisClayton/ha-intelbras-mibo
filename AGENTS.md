@@ -9,6 +9,12 @@ expand support to cameras, other models, master control, or local-LAN protocols.
 The three-key extension plan in
 `docs/plans/2026-10-30-1611-feat-three-switch-keys-plan.md` supersedes the initial
 plan's first-key-only boundary; retain the initial plan as historical context.
+The user-authorized direct cached-command plan in
+`docs/plans/2026-10-30-direct-cached-switch-commands-plan.md` supersedes only the
+prior command preflight and already-satisfied no-op contract. Commands use normal
+refresh's cached identity and validated key metadata, fail locally if it is
+missing or invalid, and send one absolute write followed by bounded readback.
+Keep the earlier plans unchanged as historical context.
 
 # Public repository
 

@@ -273,13 +273,16 @@ def identity(device):
 class Switches:
     def __init__(self, client, clock=time.monotonic, sleep=time.sleep):
         self.client, self.clock, self.sleep = client, clock, sleep
+        self._targets = {}
 
     def discover(self):
         """Return supported identities from one complete discovery snapshot.
 
         Invalid candidates are omitted independently. Duplicate cloud identities
         reject the snapshot because selecting either row would be ambiguous.
+        A new discovery starts a fresh set of per-key schema validations.
         """
+        self._targets.clear()
         return parse_devices(self.client.devices())
 
     def _select(self, selector, devices=None):
@@ -332,13 +335,17 @@ class Switches:
                 'physical_verification': 'not_confirmed'}
 
     def status(self, selector, devices=None):
-        """Read independently validated keys from one device model request."""
+        """Rebuild writable keys from one model request, then read their states."""
+        self._targets.pop(selector, None)
         selected = self._select(selector, devices)
         props = self._schema(selected)
+        validated_keys = set()
+        self._targets[selector] = (dict(selected), validated_keys)
         snapshots = {}
         for key, (_, ref) in KEYS.items():
             try:
                 self._validate_schema(props, key)
+                validated_keys.add(key)
                 snapshots[ref] = self._result(selected, key) | {'api_state': self._read(selected, key)}
             except MiboError as error:
                 if error.invalidate_session:
@@ -350,17 +357,13 @@ class Switches:
         _, ref = key_definition(key)
         if type(desired) is not bool:
             raise MiboError('explicit_boolean_required', 4)
-        selected = self._select(selector)
-        self._validate_schema(self._schema(selected), key)
-        current = self._read(selected, key)
-        result = self._result(selected, key) | {'desired_state': desired, 'write_sent': False,
-                    'command_acknowledged': False, 'api_state': current}
-        if current == desired:
-            return result
-        if self._select(selected['deviceId']) != selected:
-            raise MiboError('switch_identity_changed', 4)
-        self._validate_schema(self._schema(selected), key)
-        result.update(write_sent=True, api_state=None)
+        if selector not in self._targets:
+            raise MiboError('unique_exact_switch_required', 4)
+        selected, validated_keys = self._targets[selector]
+        if key not in validated_keys:
+            raise MiboError('unsupported_switch_schema', 4)
+        result = self._result(selected, key) | {'desired_state': desired, 'write_sent': True,
+                    'command_acknowledged': False, 'api_state': None}
         try:
             self.client.call(SET, self._body(selected, {ref: int(desired)}), version='56906')
         except MiboError as error:

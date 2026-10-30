@@ -95,8 +95,9 @@ server descriptions, response bodies, or authentication headers.
 
 Discovery accepts only model identifiers `IOT-EIW1003-IB` or `EIW1003`, complete
 nonempty device identity fields, an empty channel list, channel count zero, and a
-string gray flag. Invalid candidates are omitted independently. Before reading
-or writing a key, the model schema must validate its fixed mapping:
+string gray flag. Invalid candidates are omitted independently. During normal
+refresh, the model schema must validate each key's fixed mapping before it can
+be read or cached for commands:
 
 | Entity | Identifier | Reference |
 | --- | --- | --- |
@@ -123,12 +124,12 @@ has prior physical validation; physical verification of Key 2 and Key 3 is pendi
 ```mermaid
 flowchart TB
   S[switch.py: target key on or off] --> R[AccountRunner: serialized transaction]
-  R --> V[Switches.set: validate and read target key]
-  V -->|already desired| OK[coordinator.py: publish confirmed state]
-  V -->|state differs| W[SetIotProperties: one target reference]
+  R --> V[Switches.set: cached identity and validated key]
+  V -->|missing or invalid| E[coordinator.py: target unavailable and error]
+  V -->|valid| W[SetIotProperties: integer 0 or 1]
   W --> B[GetIotProperties: bounded readback]
-  B -->|desired state| OK
-  W -->|uncertain outcome| E[coordinator.py: target unavailable and error]
+  B -->|desired state| OK[coordinator.py: publish confirmed state]
+  W -->|uncertain outcome| E
   B -->|unconfirmed or failed| E
   class S frontend
   class R,OK,E controller
@@ -141,9 +142,14 @@ flowchart TB
 Source: `switch.py`, `runtime.py` account runner, `protocol.py` `Switches.set`,
 and `coordinator.py` `async_set`.
 
-An absolute on/off command targets only its mapped property. A differing state
-triggers identity and target-key schema revalidation before sending
-`SetIotProperties`. Acknowledged writes get up to three readback attempts, with
+An absolute on/off command targets only its mapped property, using the identity
+and validated key metadata already cached in memory by `Switches` during normal
+refresh. Missing or invalid cached metadata fails locally without discovery,
+schema requests, or a state read. With valid metadata, the first cloud request
+is `SetIotProperties` with the target reference and integer `0` or `1`. Each
+accepted command sends exactly one write, including when the last confirmed
+state already matches. There is no pre-read or already-satisfied shortcut.
+Acknowledged writes get up to three readback attempts, with
 up to two seconds between reads and a five-second readback scheduling window.
 An individual transport request can extend beyond that window. Timeout or an
 uncertain write never causes an automatic replay. Acknowledgement without the
@@ -152,9 +158,13 @@ not physical relay or load confirmation.
 
 `MiboCoordinator` polls every 30 seconds, sharing one discovery snapshot across
 selected devices. It parses each device's model once and validates and reads its
-three keys independently. Snapshots are indexed by device ID and property
-reference. An invalid or unreadable key is unavailable while healthy sibling
-keys and other devices can update. A device-level failure makes all its keys
+three keys independently. Refresh also builds the per-device/per-key validated
+command metadata cache. Disappeared devices, replaced identities, and failed
+schema validation remove the corresponding old cached metadata. The cache has
+no separate persistence, TTL, or network fallback. A property read failure alone
+does not discard validated command metadata. Snapshots are indexed by
+device ID and property reference. An invalid or unreadable key is unavailable
+while healthy sibling keys and other devices can update. A device-level failure makes all its keys
 unavailable. A non-auth command failure invalidates only its target key; a
 successful command replaces only that key's confirmed snapshot. Later polling
 can restore an unavailable key without replaying a write. Shared
@@ -164,8 +174,10 @@ reauthentication. Entity states are never updated optimistically after a write.
 `AccountRunner` sends synchronous work to Home Assistant's executor and shares a
 thread lock across clients for the same account. Complete discovery and command
 transactions are serialized, including after cancellation of an awaiting
-coroutine. Unload stops new work and publications, drains running work, and
-releases the runtime before replacement. Device and entity identities combine
+coroutine. Commands can still wait behind an active periodic refresh; removing
+command preflight requests does not establish total command latency. Unload
+stops new work and publications, drains running work, and releases the runtime
+before replacement. Device and entity identities combine
 the account namespace with cloud device ID; each entity adds its mapped property
 reference. Key 1 retains the existing `:11900` suffix byte-for-byte. All three
 entities are created even when a key's initial schema or read is unavailable.

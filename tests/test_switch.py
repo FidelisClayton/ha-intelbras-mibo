@@ -14,20 +14,27 @@ async def service(hass, entity_id, name):
 
 
 @pytest.mark.parametrize("ref", ["11900", "127000", "127100"])
-async def test_native_services_confirm_on_off_and_noop(hass, entry, cloud, ref):
+async def test_native_services_confirm_on_off_and_already_desired(hass, entry, cloud, ref):
     await setup(hass, entry)
     entity_id = entities(hass, entry)[('switch-a', ref)]
+    cloud.calls.clear()
     await service(hass, entity_id, 'turn_on')
+    assert [api for api, _, _ in cloud.calls] == ['iot.control.SetIotProperties', 'iot.control.GetIotProperties']
+    assert cloud.writes[0]['properties'] == {ref: 1}
+    assert type(cloud.writes[0]['properties'][ref]) is int
     assert hass.states.get(entity_id).state == 'on'
     assert all(not state for sibling, state in cloud.states['switch-a'].items() if sibling != ref)
     assert all(hass.states.get(entity).state == 'off'
                for (device, sibling), entity in entities(hass, entry).items()
                if device == 'switch-a' and sibling != ref)
     await service(hass, entity_id, 'turn_on')
-    assert len(cloud.writes) == 1
+    assert len(cloud.writes) == 2
     await service(hass, entity_id, 'turn_off')
     assert hass.states.get(entity_id).state == 'off'
-    assert len(cloud.writes) == 2
+    assert len(cloud.writes) == 3
+    assert [api for api, _, _ in cloud.calls] == ['iot.control.SetIotProperties', 'iot.control.GetIotProperties'] * 3
+    assert cloud.writes[-1]['properties'] == {ref: 0}
+    assert type(cloud.writes[-1]['properties'][ref]) is int
     assert all(set(write['properties']) == {ref} for write in cloud.writes)
     assert cloud.states['switch-a'] == {'11900': False, '127000': False, '127100': False}
 
@@ -67,14 +74,18 @@ async def test_command_does_not_publish_optimistic_state(hass, entry, cloud, ref
 
 
 @pytest.mark.parametrize('ref', ['11900', '127000', '127100'])
-async def test_command_auth_failure_starts_reauth_and_marks_account_unavailable(hass, entry, cloud, ref):
+@pytest.mark.parametrize('stage', ['write', 'readback'])
+async def test_command_auth_failure_starts_reauth_and_marks_account_unavailable(hass, entry, cloud, ref, stage):
     await setup(hass, entry)
     ids = entities(hass, entry)
-    cloud.list_code = '12112'
+    if stage == 'write':
+        cloud.write_code = '12112'
+    else:
+        cloud.read_failures[('switch-a', ref)] = '12112'
     with pytest.raises(HomeAssistantError):
         await service(hass, ids[('switch-a', ref)], 'turn_on')
     assert all(hass.states.get(entity_id).state == 'unavailable' for entity_id in ids.values())
-    assert not cloud.writes
+    assert len(cloud.writes) == 1
     await hass.async_block_till_done()
     assert hass.config_entries.flow.async_progress()[0]['context']['entry_id'] == entry.entry_id
 
