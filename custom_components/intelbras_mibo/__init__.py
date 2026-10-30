@@ -8,7 +8,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .const import CONF_DEVICE_IDS, DOMAIN, PLATFORMS
 from .coordinator import MiboCoordinator
-from .protocol import REF, MiboError
+from .protocol import KEYS, MiboError
 from .runtime import AccountRuntime, async_create_runtime
 
 
@@ -53,7 +53,8 @@ async def _async_options_updated(hass: HomeAssistant, entry: MiboConfigEntry) ->
 def _remove_deselected_records(hass: HomeAssistant, entry: MiboConfigEntry) -> None:
     namespace = entry.runtime_data.account_namespace
     selected = {f'{namespace}:{device_id}' for device_id in entry.options[CONF_DEVICE_IDS]}
-    selected_entities = {f'{identity}:{REF}' for identity in selected}
+    selected_entities = {f'{identity}:{ref}' for identity in selected
+                         for _, ref in KEYS.values()}
     entities = er.async_get(hass)
     for entity in er.async_entries_for_config_entry(entities, entry.entry_id):
         if entity.unique_id not in selected_entities:

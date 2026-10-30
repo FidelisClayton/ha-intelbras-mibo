@@ -240,7 +240,15 @@ def validate_session(value):
     host_from(value.get('host'))
     return dict(value)
 
-REF = '11900'
+KEYS = {1: ('switch', '11900'), 2: ('std_switch2', '127000'),
+        3: ('std_switch3', '127100')}
+
+
+def key_definition(key):
+    if type(key) is not int or key not in KEYS:
+        raise MiboError('unsupported_key', 4)
+    return KEYS[key]
+
 GET = 'iot.control.GetIotProperties'
 SET = 'iot.control.SetIotProperties'
 MODELS = frozenset({'IOT-EIW1003-IB', 'EIW1003'})
@@ -290,55 +298,71 @@ class Switches:
         props = schema.get('properties') if isinstance(schema, dict) else None
         if not isinstance(props, list) or not all(isinstance(p, dict) for p in props):
             raise MiboError('unsupported_switch_schema', 4)
-        matches = [p for p in props if p.get('identifier') == 'switch']
-        if len(matches) != 1:
+        return props
+
+    def _validate_schema(self, props, key):
+        identifier, ref = key_definition(key)
+        matches = [p for p in props if p.get('identifier') == identifier]
+        references = [p for p in props if type(p.get('ref')) in (int, str)
+                      and str(p['ref']) == ref]
+        if len(matches) != 1 or len(references) != 1:
             raise MiboError('unsupported_switch_schema', 4)
         prop = matches[0]
-        if (type(prop.get('ref')) not in (int, str) or str(prop['ref']) != REF
-                or not isinstance(prop.get('dataType'), dict) or prop['dataType'].get('type') != 'bool' or prop.get('accessMode') != 'rw'):
+        if (type(prop.get('ref')) not in (int, str) or str(prop['ref']) != ref
+                or not isinstance(prop.get('dataType'), dict)
+                or prop['dataType'].get('type') != 'bool' or prop.get('accessMode') != 'rw'):
             raise MiboError('unsupported_switch_schema', 4)
 
     def _body(self, selected, properties):
         return {'deviceId': selected['deviceId'], 'productId': selected['productId'], 'properties': properties}
 
-    def _read(self, selected):
-        data = self.client.call(GET, self._body(selected, [REF]), version='56906')
+    def _read(self, selected, key):
+        _, ref = key_definition(key)
+        data = self.client.call(GET, self._body(selected, [ref]), version='56906')
         props = data.get('properties')
-        value = props.get(REF) if isinstance(props, dict) else None
+        value = props.get(ref) if isinstance(props, dict) else None
         if type(value) is int and value in (0, 1):
             return value == 1
         if type(value) is str and value in ('0', '1'):
             return value == '1'
         raise MiboError('switch_state_not_binary', 4)
 
-    def _result(self, selected):
-        return {'device_id': selected['deviceId'], 'name': selected['deviceName'], 'key': 1,
+    def _result(self, selected, key):
+        return {'device_id': selected['deviceId'], 'name': selected['deviceName'], 'key': key,
                 'physical_verification': 'not_confirmed'}
 
     def status(self, selector, devices=None):
-        """Read key 1, optionally sharing a validated discovery snapshot."""
+        """Read independently validated keys from one device model request."""
         selected = self._select(selector, devices)
-        self._schema(selected)
-        return self._result(selected) | {'api_state': self._read(selected)}
+        props = self._schema(selected)
+        snapshots = {}
+        for key, (_, ref) in KEYS.items():
+            try:
+                self._validate_schema(props, key)
+                snapshots[ref] = self._result(selected, key) | {'api_state': self._read(selected, key)}
+            except MiboError as error:
+                if error.invalidate_session:
+                    raise
+                snapshots[ref] = None
+        return snapshots
 
     def set(self, selector, desired, *, key=1):
-        if type(key) is not int or key != 1:
-            raise MiboError('unsupported_key', 4)
+        _, ref = key_definition(key)
         if type(desired) is not bool:
             raise MiboError('explicit_boolean_required', 4)
         selected = self._select(selector)
-        self._schema(selected)
-        current = self._read(selected)
-        result = self._result(selected) | {'desired_state': desired, 'write_sent': False,
+        self._validate_schema(self._schema(selected), key)
+        current = self._read(selected, key)
+        result = self._result(selected, key) | {'desired_state': desired, 'write_sent': False,
                     'command_acknowledged': False, 'api_state': current}
         if current == desired:
             return result
         if self._select(selected['deviceId']) != selected:
             raise MiboError('switch_identity_changed', 4)
-        self._schema(selected)
+        self._validate_schema(self._schema(selected), key)
         result.update(write_sent=True, api_state=None)
         try:
-            self.client.call(SET, self._body(selected, {REF: int(desired)}), version='56906')
+            self.client.call(SET, self._body(selected, {ref: int(desired)}), version='56906')
         except MiboError as error:
             if error.invalidate_session or error.code == 'login_required' or (error.code.startswith('api_') and error.code != 'api_invalid_code'):
                 raise MiboError(error.code, error.exit_code, result, invalidate_session=error.invalidate_session) from None
@@ -356,7 +380,7 @@ class Switches:
                     self.sleep(min(2, remaining))
                     if self.clock() >= deadline:
                         break
-                result['api_state'] = self._read(selected)
+                result['api_state'] = self._read(selected, key)
                 if result['api_state'] == desired:
                     return result
                 if self.clock() >= deadline:

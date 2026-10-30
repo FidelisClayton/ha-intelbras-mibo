@@ -1,4 +1,5 @@
-"""Account polling and serialized, cloud-confirmed first-key commands."""
+"""Account polling and serialized, cloud-confirmed key commands."""
+from functools import partial
 from typing import Any
 import logging
 
@@ -8,11 +9,11 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
-from .protocol import MiboError, Switches
+from .protocol import KEYS, MiboError, Switches, key_definition
 from .runtime import AccountRuntime, RuntimeClosed
 
 _LOGGER = logging.getLogger(__name__)
-type Snapshots = dict[str, dict[str, Any] | None]
+type Snapshots = dict[str, dict[str, dict[str, Any] | None]]
 
 
 class MiboCoordinator(DataUpdateCoordinator[Snapshots]):
@@ -37,7 +38,7 @@ class MiboCoordinator(DataUpdateCoordinator[Snapshots]):
             except MiboError as error:
                 if error.invalidate_session:
                     raise
-                snapshots[device_id] = None
+                snapshots[device_id] = {ref: None for _, ref in KEYS.values()}
         return devices, snapshots
 
     async def _async_update_data(self) -> Snapshots:
@@ -56,13 +57,14 @@ class MiboCoordinator(DataUpdateCoordinator[Snapshots]):
         self.devices = devices
         return snapshots
 
-    async def async_set(self, device_id: str, desired: bool) -> None:
+    async def async_set(self, device_id: str, desired: bool, *, key: int = 1) -> None:
         """Await one whole command transaction without optimistic state or replay."""
+        _, ref = key_definition(key)
         if self.stopping or self.runtime.runner.closed:
             raise HomeAssistantError('The integration is unloading.')
         try:
             result = await self.runtime.runner.async_run(
-                self._switches.set, device_id, desired)
+                partial(self._switches.set, device_id, desired, key=key))
         except RuntimeClosed:
             raise HomeAssistantError('The integration is unloading.') from None
         except MiboError as error:
@@ -72,8 +74,10 @@ class MiboCoordinator(DataUpdateCoordinator[Snapshots]):
                         ConfigEntryAuthFailed('The cloud session must be renewed.'))
                     self.config_entry.async_start_reauth_if_available(self.hass)
                 else:
-                    self.async_set_updated_data({**self.data, device_id: None})
+                    self.async_set_updated_data({**self.data, device_id: {
+                        **self.data[device_id], ref: None}})
             raise HomeAssistantError('The switch command could not be confirmed.') from None
         if self.stopping:
             raise HomeAssistantError('The integration is unloading.')
-        self.async_set_updated_data({**self.data, device_id: result})
+        self.async_set_updated_data({**self.data, device_id: {
+            **self.data[device_id], ref: result}})
