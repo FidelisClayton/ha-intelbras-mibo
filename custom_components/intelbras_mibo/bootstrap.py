@@ -60,7 +60,6 @@ def valid_cache(value):
 
 
 def _fetch_cache():
-    """Run download, hashing, and source parsing together in an executor."""
     try:
         constants = extract_constants(download_source())
     except MiboError:

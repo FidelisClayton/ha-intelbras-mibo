@@ -10,6 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import MiboConfigEntry
 from .const import DOMAIN
 from .coordinator import MiboCoordinator
+from .protocol import REF
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: MiboConfigEntry,
@@ -29,7 +30,7 @@ class MiboSwitch(CoordinatorEntity[MiboCoordinator], SwitchEntity):
         super().__init__(coordinator)
         self._device_id = device_id
         self._identity = f'{coordinator.runtime.account_namespace}:{device_id}'
-        self._attr_unique_id = f'{self._identity}:11900'
+        self._attr_unique_id = f'{self._identity}:{REF}'
 
     @property
     def device_info(self) -> DeviceInfo:
