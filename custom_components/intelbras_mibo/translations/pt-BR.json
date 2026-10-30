@@ -1,0 +1,70 @@
+{
+  "title": "Intelbras Mibo",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Conectar sua conta Mibo",
+        "description": "Integração não oficial da comunidade para interruptores EIW 1003 (tecla 1).",
+        "data": {
+          "email": "E-mail",
+          "password": "Senha"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconectar sua conta Mibo",
+        "description": "Entre novamente com a mesma conta.",
+        "data": {
+          "email": "E-mail",
+          "password": "Senha"
+        }
+      },
+      "code": {
+        "title": "Verificar seu e-mail",
+        "description": "Digite o código enviado por e-mail. Tentar o código novamente não envia outro e-mail.",
+        "data": {
+          "code": "Código de verificação"
+        }
+      },
+      "devices": {
+        "title": "Selecionar interruptores",
+        "description": "Selecione pelo menos um interruptor compatível. Apenas a tecla 1 será disponibilizada.",
+        "data": {
+          "device_ids": "Interruptores"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Não foi possível entrar. Confira as credenciais da sua conta.",
+      "cannot_connect": "Não foi possível conectar. Tente novamente mais tarde.",
+      "invalid_code": "Não foi possível verificar o código. Confira e tente novamente.",
+      "account_mismatch": "Use a mesma conta da integração existente.",
+      "select_devices": "Selecione pelo menos uma opção disponível."
+    },
+    "abort": {
+      "already_configured": "Esta conta já está configurada.",
+      "already_in_progress": "A configuração desta conta já está em andamento.",
+      "no_supported_devices": "Nenhum interruptor EIW 1003 compatível foi encontrado.",
+      "cannot_connect": "Não foi possível buscar interruptores. Tente novamente mais tarde.",
+      "invalid_auth": "A sessão foi rejeitada. Entre novamente.",
+      "unique_id_mismatch": "Use a mesma conta da integração existente."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Selecionar interruptores",
+        "description": "Interruptores ausentes permanecem selecionados até serem removidos. Selecione pelo menos um interruptor.",
+        "data": {
+          "device_ids": "Interruptores"
+        }
+      }
+    },
+    "error": {
+      "select_devices": "Selecione pelo menos uma opção disponível."
+    },
+    "abort": {
+      "cannot_connect": "Não foi possível buscar interruptores. Sua seleção foi mantida.",
+      "invalid_auth": "A sessão foi rejeitada. Autentique novamente antes de alterar os interruptores."
+    }
+  }
+}
