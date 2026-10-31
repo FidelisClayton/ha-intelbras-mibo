@@ -1,5 +1,3 @@
-"""Account-scoped executor jobs and token-only runtime reconstruction."""
-
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -51,7 +49,6 @@ class AccountRunner:
 
     @property
     def closed(self) -> bool:
-        """Whether jobs and publications have stopped."""
         return self._closed.is_set()
 
     async def async_run(self, job: Callable[..., T], *args: Any) -> T:
@@ -98,8 +95,6 @@ class AccountRunner:
 
 @dataclass
 class AccountRuntime:
-    """Client and runner owned by one loaded config entry."""
-
     client: Client
     runner: AccountRunner
     account_namespace: str

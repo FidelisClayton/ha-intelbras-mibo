@@ -1,4 +1,3 @@
-"""Account polling and serialized, cloud-confirmed key commands."""
 import asyncio
 from functools import partial
 from typing import Any

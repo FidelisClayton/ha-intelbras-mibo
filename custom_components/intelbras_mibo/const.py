@@ -1,5 +1,3 @@
-"""Constants for the Intelbras Mibo integration."""
-
 from datetime import timedelta
 
 from homeassistant.const import Platform
