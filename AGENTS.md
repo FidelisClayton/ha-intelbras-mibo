@@ -32,8 +32,8 @@ device IDs, or device nicknames in tracked files, fixtures, logs, or documentati
 Use synthetic data in tests and portable paths in examples. Preserve the MIT
 license and both root and packaged upstream NOTICE files when adapting code.
 Review distributable content and new history before publication. The integration
-on the feature branch is manually copyable; HACS default-branch installation is
-available only after publication and merge. Do not claim a release, catalog
+is available on the public repository's `main` branch for manual copy and HACS
+custom-repository installation. Do not claim a release, catalog
 listing, or successful validation without evidence.
 
 # Home Assistant
@@ -68,12 +68,13 @@ Always record the checks actually run and any skipped or blocked verification.
 # Live access
 
 Workers must not make cloud calls or actuate devices. Only the parent thread may
-perform live validation, limited to key 1 of the uniquely pinned switch on the
-existing Home Assistant host, as identified privately in the parent thread.
-Read-only device discovery is allowed to select that switch. The three-key
-software boundary does not authorize automatic actuation of keys 2/3. Only a new
-explicit user grant can expand live actuation beyond the privately pinned key 1.
-Do not actuate other devices during live verification; normal user-configured
-discovery is part of the integration contract. Keep existing authentication, other integrations,
+perform live validation through normal authentication and supported Home Assistant
+APIs, limited to the installation, devices, and keys covered by the user's
+explicit grant. Software support does not itself expand actuation authorization.
+User-observed control of all three property keys has been verified on an existing
+installation, with original states restored; this does not establish physical
+button order, other-model coverage, or command latency. Do not actuate other
+devices during live verification; normal user-configured discovery is part of
+the integration contract. Keep existing authentication, other integrations,
 credentials, and networking intact. Missing private inputs block live validation,
 not isolated fake-backed work.

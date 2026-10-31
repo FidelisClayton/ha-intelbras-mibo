@@ -12,18 +12,15 @@ subprocess, or extra service.
 
 ## Installation availability
 
-The implementation is on `feat/hacs-integration` in the public repository
+The integration is available on `main` in the public repository
 [`FidelisClayton/ha-intelbras-mibo`](https://github.com/FidelisClayton/ha-intelbras-mibo).
-The bootstrap on `main` does not contain the integration. Until the implementation is
-merged, use the component directory from the feature branch for manual testing.
-Draft PR #1 remains open. There is no release or HACS catalog listing. Component
-version **0.3.0** identifies the additive-discovery test installation; it is not a tagged
-release.
+Install it by manual copy or as a HACS custom repository. There is no tagged
+release or HACS default-catalog listing. Component version **0.3.1** identifies
+this component update; it is not a tagged release.
 
 ### Manual copy
 
-1. Obtain a checkout or archive of the implementation branch. After merge, the
-   default branch can be used instead.
+1. Obtain a checkout or archive of the repository’s `main` branch.
 2. Copy the entire `custom_components/intelbras_mibo` directory, including its
    `NOTICE`, into `<config>/custom_components/`. The resulting path must be
    `<config>/custom_components/intelbras_mibo/manifest.json`, with the Python and
@@ -33,10 +30,7 @@ release.
 Only the component directory is needed at runtime. Do not copy development tests
 or a virtual environment into Home Assistant.
 
-### HACS custom repository, after merge
-
-These steps become usable after the public repository exists and the
-implementation is merged into its default branch:
+### HACS custom repository
 
 1. In HACS, open **Custom repositories** from its menu.
 2. Add `https://github.com/FidelisClayton/ha-intelbras-mibo` with category
@@ -51,7 +45,8 @@ implementation is merged into its default branch:
 2. Enter your Mibo account email and password in the native form.
 3. If the cloud requests email verification, enter the code sent to your email.
    Only the specific cloud challenge `12112` opens this step. Retrying a code
-   does not send another email.
+   does not send another email. If terminal trust was accepted but the following
+   login could not connect, retrying resumes login without granting the code again.
 4. Setup discovers all supported EIW 1003 devices in the account automatically.
    At least one supported device is required for initial setup. Cameras and
    unsupported identities are omitted.
@@ -100,8 +95,9 @@ not establish total command latency.
 The key mapping is `switch` / `11900` for Key 1, `std_switch2` / `127000` for
 Key 2, and `std_switch3` / `127100` for Key 3. Read-only cloud checks confirmed
 these boolean read/write properties and readable states. This establishes schema
-support, not physical button order. Only Key 1 has prior physical validation;
-physical verification of Key 2 and Key 3 remains pending.
+support, not physical button order. User-observed control of all three property
+keys was verified on an existing installation, with the original states restored.
+This does not establish physical button order or compatibility with other models.
 
 Internet access to the Mibo cloud is required. Cold setup also downloads a pinned
 upstream Swift source file, verifies its SHA-256 digest, and extracts six static
@@ -118,8 +114,10 @@ changes or session-file imports are needed.
 ## Troubleshooting
 
 - **Integration missing:** check the exact component path above, ensure you copied
-  the implementation branch, then restart Home Assistant.
-- **Unable to connect:** check internet access and retry later. On cold setup,
+  the full component directory, then restart Home Assistant.
+- **Unable to connect:** transport failures, HTTP 5xx responses, and malformed
+  provider responses during login or email verification report a connection
+  error. Retry later. On cold setup,
   upstream source access is also required. Do not bypass a source digest failure.
 - **Unable to sign in / invalid code:** check your credentials or code in the
   native form. Other login errors do not automatically trigger email verification.

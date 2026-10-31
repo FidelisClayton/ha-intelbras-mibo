@@ -65,7 +65,7 @@ async def test_mfa_finite_stages_and_bad_code(hass, protocol):
     assert 'synthetic-password' not in repr(result)
 
 
-@pytest.mark.parametrize('code', ['api_12345', 'http_403', 'login_failure_no_retry'])
+@pytest.mark.parametrize('code', ['api_12345', 'http_401', 'http_403', 'login_required', 'login_failure_no_retry'])
 async def test_other_login_errors_never_request_mfa(hass, protocol, code):
     client, _, _ = protocol
     client.return_value.login.side_effect = MiboError(code)
@@ -169,11 +169,18 @@ async def test_failed_reauth_does_not_replace_loaded_client_or_data(hass, protoc
     assert result['step_id'] == 'code'
     assert entry.runtime_data.client is loaded_client
     result = await hass.config_entries.flow.async_configure(result['flow_id'], {'code': 'synthetic-code'})
-    assert result['errors'] == {'base': 'invalid_code'}
+    assert result['step_id'] == 'reauth_confirm'
+    assert result['errors'] == {'base': 'invalid_auth'}
+    assert hass.config_entries.flow._progress[result['flow_id']]._password is None
     assert entry.runtime_data.client is loaded_client
     assert dict(entry.data) == old_data
     assert dict(entry.options) == old_options
     assert client.call_args.args[1] == SESSION['terminal_id']
+    result = await hass.config_entries.flow.async_configure(result['flow_id'],
+        {'email': 'other@example.test', 'password': 'replacement-password'})
+    assert result['errors'] == {'base': 'account_mismatch'}
+    assert client.return_value.login.call_count == 2
+    assert dict(entry.data) == old_data
     hass.config_entries.flow.async_abort(result['flow_id'])
     await hass.async_block_till_done()
 
@@ -199,3 +206,114 @@ async def test_protocol_filters_candidates_before_native_selection(hass, protoco
     result = await start(hass)
     assert result['type'] == FlowResultType.CREATE_ENTRY
     assert result['options'] == {'device_ids': ['switch-a', 'switch-b']}
+
+
+@pytest.mark.parametrize('failure', [
+    'http_500', 'transport_failure_no_retry', 'invalid_response', 'invalid_data',
+    'api_invalid_code', 'invalid_login_response',
+])
+async def test_login_connection_failure_is_not_bad_credentials(hass, protocol, failure):
+    client, _, _ = protocol
+    client.return_value.login.side_effect = MiboError(failure)
+    result = await start(hass)
+    assert result['step_id'] == 'user'
+    assert result['errors'] == {'base': 'cannot_connect'}
+    assert hass.config_entries.flow._progress[result['flow_id']]._password is None
+    client.return_value.request_code.assert_not_called()
+
+
+@pytest.mark.parametrize('failure', ['http_503', 'transport_failure_no_retry', 'api_invalid_code'])
+async def test_grant_connection_failure_retries_grant_without_email(hass, protocol, failure):
+    client, _, _ = protocol
+    client.return_value.login.side_effect = [MiboError('api_12112'), None]
+    client.return_value.grant_code.side_effect = [MiboError(failure), None]
+    result = await start(hass)
+    result = await hass.config_entries.flow.async_configure(result['flow_id'], {'code': 'synthetic-code'})
+    assert result['step_id'] == 'code'
+    assert result['errors'] == {'base': 'cannot_connect'}
+    assert client.return_value.login.call_count == 1
+    result = await hass.config_entries.flow.async_configure(result['flow_id'], {'code': 'synthetic-code'})
+    assert result['type'] == FlowResultType.CREATE_ENTRY
+    assert client.return_value.grant_code.call_count == 2
+    client.return_value.request_code.assert_called_once()
+
+
+@pytest.mark.parametrize('failure', [
+    'http_500', 'transport_failure_no_retry', 'invalid_response', 'invalid_data',
+    'api_invalid_code', 'invalid_login_response',
+])
+async def test_accepted_code_connection_failure_retries_only_login(hass, protocol, failure):
+    client, _, _ = protocol
+    client.return_value.login.side_effect = [MiboError('api_12112'), MiboError(failure), None]
+    result = await start(hass)
+    flow = hass.config_entries.flow._progress[result['flow_id']]
+    result = await hass.config_entries.flow.async_configure(result['flow_id'], {'code': 'synthetic-code'})
+    assert result['step_id'] == 'code'
+    assert result['errors'] == {'base': 'cannot_connect'}
+    result = await hass.config_entries.flow.async_configure(result['flow_id'], {'code': ''})
+    assert result['type'] == FlowResultType.CREATE_ENTRY
+    client.return_value.grant_code.assert_called_once_with(EMAIL, 'synthetic-code')
+    client.return_value.request_code.assert_called_once()
+    assert client.return_value.login.call_count == 3
+    assert flow._password is None
+
+
+@pytest.mark.parametrize('failure', [
+    'api_12345', 'api_12112', 'http_401', 'http_403', 'login_required', 'login_failure_no_retry',
+])
+async def test_accepted_code_login_rejection_returns_to_credentials(hass, protocol, failure):
+    client, _, _ = protocol
+    client.return_value.login.side_effect = [MiboError('api_12112'), MiboError(failure), None]
+    result = await start(hass, ' USER@EXAMPLE.TEST ')
+    flow = hass.config_entries.flow._progress[result['flow_id']]
+    terminal = flow._terminal
+    result = await hass.config_entries.flow.async_configure(result['flow_id'], {'code': 'synthetic-code'})
+    assert result['step_id'] == 'user'
+    assert result['errors'] == {'base': 'invalid_auth'}
+    assert flow._password is None
+    assert flow._email == 'USER@EXAMPLE.TEST'
+    assert flow._terminal == terminal
+    result = await hass.config_entries.flow.async_configure(result['flow_id'],
+        {'email': 'USER@EXAMPLE.TEST', 'password': 'replacement-password'})
+    assert result['type'] == FlowResultType.CREATE_ENTRY
+    assert result['result'].unique_id == EMAIL
+    assert client.call_args.args[1] == terminal
+    client.return_value.grant_code.assert_called_once()
+    client.return_value.request_code.assert_called_once()
+
+
+@pytest.mark.parametrize(('after_grant', 'failure'), [
+    (False, 'transport_failure_no_retry'), (True, 'http_503'),
+])
+async def test_reauth_connection_failure_preserves_loaded_account(hass, protocol, after_grant, failure):
+    from types import SimpleNamespace
+    client, _, _ = protocol
+    entry = existing(hass)
+    loaded_client = object()
+    entry.runtime_data = SimpleNamespace(client=loaded_client)
+    old_data, old_options = dict(entry.data), dict(entry.options)
+    client.return_value.login.side_effect = (
+        [MiboError('api_12112'), MiboError(failure)] if after_grant else MiboError(failure))
+    result = await hass.config_entries.flow.async_init(DOMAIN,
+        context={'source': SOURCE_REAUTH, 'entry_id': entry.entry_id}, data=entry.data)
+    result = await hass.config_entries.flow.async_configure(result['flow_id'],
+        {'email': EMAIL.upper(), 'password': 'synthetic-password'})
+    if after_grant:
+        result = await hass.config_entries.flow.async_configure(result['flow_id'], {'code': 'synthetic-code'})
+    assert result['step_id'] == ('code' if after_grant else 'reauth_confirm')
+    assert result['errors'] == {'base': 'cannot_connect'}
+    assert entry.runtime_data.client is loaded_client
+    assert dict(entry.data) == old_data
+    assert dict(entry.options) == old_options
+    assert entry.unique_id == EMAIL
+    assert client.call_args.args[1] == SESSION['terminal_id']
+    assert client.return_value.login.call_count == (2 if after_grant else 1)
+    assert client.return_value.grant_code.call_count == int(after_grant)
+    assert client.return_value.request_code.call_count == int(after_grant)
+    flow = hass.config_entries.flow._progress[result['flow_id']]
+    assert flow._email == EMAIL
+    if not after_grant:
+        assert flow._password is None
+    hass.config_entries.flow.async_abort(result['flow_id'])
+    await hass.async_block_till_done()
+    assert flow._password is None

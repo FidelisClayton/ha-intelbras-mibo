@@ -95,15 +95,15 @@ merely repeat documentation text.
 
 Live validation is separate from fake-backed checks. Workers may not contact the
 cloud or actuate devices. Only the parent thread may use the privately authorized
-Home Assistant installation and pinned key-1 switch, through normal authentication
-and supported Home Assistant APIs. Three-key software support does not expand
-that actuation authorization. Do not automatically actuate keys 2/3; expanding
-live actuation requires a new explicit user grant. Read-only schema and state
-checks establish property support, not physical button order or relay operation.
-Only Key 1 has prior physical validation; Key 2 and Key 3 still require user
-physical verification after installation. Missing authorization or private setup
-inputs block live verification, not offline tests. Do not edit authentication storage,
-other integrations, networking, or credentials to make validation work.
+Home Assistant installation, devices, and keys within the user's explicit grant,
+through normal authentication and supported Home Assistant APIs. Software support
+does not itself authorize actuation. Read-only schema and state checks establish
+property support, not physical button order or relay operation. User-observed
+control of all three property keys was verified on an existing installation,
+with the original states restored. This does not establish physical button order,
+other-model coverage, or command latency. Missing authorization or private setup
+inputs block live verification, not offline tests. Do not edit authentication
+storage, other integrations, networking, or credentials to make validation work.
 
 The three-key support boundary is governed by
 [the extension plan](plans/2026-10-30-1611-feat-three-switch-keys-plan.md).
@@ -125,13 +125,20 @@ authentication failures must retain known devices. A missing device is
 unavailable, including across restarts, and must not cause automatic entity or
 device registry deletion. Existing cached-command ordering, exactly one write,
 bounded readback, account serialization, and failure isolation remain covered.
-The initial first-key plan remains historical context. Version `0.3.0` identifies
-the additive-discovery component update for installation testing, not a tag or
-release. Installation and read-only verification results must be recorded
-separately from fake tests;
-do not claim an existing installation was upgraded until the parent verifies it.
-The implementation remains on `feat/hacs-integration` with draft PR #1 open;
-`main` contains the bootstrap, and HACS default-branch installation requires merge.
+The initial first-key plan remains historical context.
+The [Ponytail review-fixes plan](plans/2026-10-31-ponytail-review-fixes-plan.md)
+covers ordered coordinator publications and authentication error handling without
+changing those contracts. Its tests must reproduce stale refresh publication
+after a confirmed command, distinguish connection failures from rejected
+credentials or codes, and retry login without repeating an accepted code grant.
+Version `0.3.1` identifies this component update, not a tag or release. Record
+installation and live verification separately from fake tests; do not claim an
+existing installation was upgraded until the parent verifies it.
+
+The implementation is available on the public repository's `main` branch.
+Manual installation and HACS custom-repository installation use that branch;
+there is no tagged release or HACS default-catalog listing. See the
+[README installation steps](../README.md#installation-availability).
 
 ## Contributions and privacy
 
