@@ -1,4 +1,3 @@
-"""Native switches for the three keys of each known EIW 1003."""
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity

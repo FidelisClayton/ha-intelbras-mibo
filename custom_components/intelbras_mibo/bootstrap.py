@@ -1,5 +1,3 @@
-"""Pinned static application metadata, privately cached through Home Assistant."""
-
 import hashlib
 import re
 import urllib.error

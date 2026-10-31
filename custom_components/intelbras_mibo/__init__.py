@@ -1,4 +1,3 @@
-"""Unofficial community integration for Intelbras Mibo."""
 from dataclasses import dataclass
 
 from homeassistant.config_entries import ConfigEntry
@@ -13,8 +12,6 @@ from .runtime import AccountRuntime, async_create_runtime
 
 @dataclass
 class MiboRuntime(AccountRuntime):
-    """Account resources and coordinator owned by the loaded entry."""
-
     coordinator: MiboCoordinator
 
 

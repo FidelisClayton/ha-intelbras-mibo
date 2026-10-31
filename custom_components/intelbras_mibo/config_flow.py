@@ -1,5 +1,3 @@
-"""Native account setup, email verification, and reauthentication."""
-
 from uuid import uuid4
 
 import voluptuous as vol
@@ -39,8 +37,6 @@ class MiboConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._client = None
         self._runner = None
         self._app = None
-        self._session = None
-        self._devices = {}
         self._reauth = False
         self._terminal = None
         self._code_verified = False
@@ -50,7 +46,6 @@ class MiboConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Clear secrets on success, error abort, and explicit cancellation."""
         self._password = None
         self._client = None
-        self._session = None
         self._code_verified = False
         if self._runner is not None:
             self.hass.async_create_task(self._runner.async_close())
@@ -152,18 +147,18 @@ class MiboConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Mark subsequent 12112 responses as authenticated-session failures.
                 client = Client.from_session(app, session)
                 return session, client, Switches(client).discover()
-            self._session, self._client, self._devices = await self._runner.async_run(discover)
+            session, self._client, devices = await self._runner.async_run(discover)
         except MiboError as error:
             return self.async_abort(reason='invalid_auth' if error.invalidate_session else 'cannot_connect')
         if self._reauth:
             entry = self._get_reauth_entry()
             data = dict(entry.data)
-            data['session'] = self._session
+            data['session'] = session
             return self.async_update_reload_and_abort(entry, data=data)
-        if not self._devices:
+        if not devices:
             return self.async_abort(reason='no_supported_devices')
         self._abort_if_unique_id_configured()
         return self.async_create_entry(title=self._email, data={
             'email': self._email, 'account': canonical_account(self._email),
-            'account_namespace': account_namespace(self._email), 'session': self._session,
-        }, options={CONF_DEVICE_IDS: list(self._devices)})
+            'account_namespace': account_namespace(self._email), 'session': session,
+        }, options={CONF_DEVICE_IDS: list(devices)})
