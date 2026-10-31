@@ -14,6 +14,11 @@ from .protocol import Client, MiboError, Switches
 from .runtime import AccountRunner, account_namespace, canonical_account
 
 
+def _authentication_rejected(error):
+    return (error.code in ('http_401', 'http_403', 'login_required', 'login_failure_no_retry') or
+            error.code.startswith('api_') and error.code[4:].isdigit())
+
+
 def _credentials(email=None):
     return vol.Schema({
         vol.Required('email', **({'default': email} if email else {})):
@@ -38,6 +43,7 @@ class MiboConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._devices = {}
         self._reauth = False
         self._terminal = None
+        self._code_verified = False
 
     @callback
     def async_remove(self):
@@ -45,6 +51,7 @@ class MiboConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._password = None
         self._client = None
         self._session = None
+        self._code_verified = False
         if self._runner is not None:
             self.hass.async_create_task(self._runner.async_close())
             self._runner = None
@@ -62,8 +69,8 @@ class MiboConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_reauth_confirm(self, user_input=None):
         return await self._async_credentials('reauth_confirm', user_input)
 
-    async def _async_credentials(self, step, user_input):
-        errors = {}
+    async def _async_credentials(self, step, user_input, errors=None):
+        errors = errors or {}
         if user_input is not None:
             email = user_input['email'].strip()
             if not email or '@' not in email or not user_input['password']:
@@ -80,6 +87,7 @@ class MiboConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     await self._runner.async_close()
                 self._email = self._email if self._reauth else email
                 self._password = user_input['password']
+                self._code_verified = False
                 self._client = None
                 self._terminal = self._terminal or uuid4().hex
                 self._runner = AccountRunner(self.hass, self._email)
@@ -98,8 +106,8 @@ class MiboConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             return await self.async_step_code()
                     else:
                         self._password = None
-                        errors['base'] = ('cannot_connect' if self._client is None or
-                                          error.code == 'transport_failure_no_retry' else 'invalid_auth')
+                        errors['base'] = ('invalid_auth' if self._client is not None and
+                                          _authentication_rejected(error) else 'cannot_connect')
                 else:
                     return await self._async_authenticated()
         return self.async_show_form(step_id=step, data_schema=_credentials(self._email), errors=errors)
@@ -108,17 +116,28 @@ class MiboConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             code = user_input['code'].strip()
-            if not code:
-                errors['base'] = 'invalid_code'
-            else:
-                try:
-                    client, email, password = self._client, self._email, self._password
-                    def verify():
-                        client.grant_code(email, code)
-                        client.login(email, password)
-                    await self._runner.async_run(verify)
-                except MiboError:
+            if not self._code_verified:
+                if not code:
                     errors['base'] = 'invalid_code'
+                else:
+                    try:
+                        await self._runner.async_run(self._client.grant_code, self._email, code)
+                    except MiboError as error:
+                        errors['base'] = ('invalid_code' if error.code.startswith('api_')
+                                          and error.code[4:].isdigit() else 'cannot_connect')
+                    else:
+                        self._code_verified = True
+            if self._code_verified:
+                try:
+                    await self._runner.async_run(self._client.login, self._email, self._password)
+                except MiboError as error:
+                    if not _authentication_rejected(error):
+                        errors['base'] = 'cannot_connect'
+                    else:
+                        self._password = None
+                        return await self._async_credentials(
+                            'reauth_confirm' if self._reauth else 'user', None,
+                            {'base': 'invalid_auth'})
                 else:
                     return await self._async_authenticated()
         return self.async_show_form(step_id='code', errors=errors, data_schema=vol.Schema({
