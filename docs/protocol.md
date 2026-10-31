@@ -42,10 +42,13 @@ flowchart TB
   L -->|success| D[Switches.discover: BasicList]
   L -->|12112| C[Client.request_code: GetValidCode]
   C --> F[config_flow.py: email code]
-  F --> G[Client.grant_code: GrantingCredit]
-  G --> A[Client.login: one attempt]
+  F -->|grant not yet accepted| G[Client.grant_code: GrantingCredit]
+  G -->|accepted| A[Client.login: one attempt]
+  G -->|rejected or connection failure| F
+  F -->|accepted grant retry| A
   A -->|success| D
-  A -->|failure| F
+  A -->|connection failure| F
+  A -->|rejected credentials| CF
   D --> E[Home Assistant config entry: all supported devices]
   class CF,F frontend
   class L,C,G,A,D controller
@@ -59,10 +62,19 @@ Source: `config_flow.py` credential, code, authentication, and discovery steps;
 `protocol.py` login, request-code, grant-code, and discovery methods.
 
 Only login error `12112` requests an email code. Submitting a code grants terminal
-trust and makes one login attempt; a failed code stays on the code form without
-sending another email. Passwords and verification codes stay in flow memory,
-without being persisted. An entry is created only after discovery finds at least
-one supported device. Account identity is based on a trimmed, case-folded email;
+trust and makes one login attempt. A rejected code stays on the code form without
+sending another email. Transport failures, HTTP 5xx responses, and malformed
+provider responses during initial login, code grant, or post-grant login report
+a connection error. Malformed responses include `invalid_response`,
+`invalid_data`, `api_invalid_code`, and `invalid_login_response`. During login,
+only numeric `api_*` provider rejections, HTTP 401/403, `login_required`, and
+`login_failure_no_retry` report rejected credentials; the specific `12112`
+challenge still opens email verification. After an accepted grant, flow-local
+memory retains that fact;
+retrying resumes login without granting the code again. Rejected credentials
+after a grant return to the credentials form. Passwords and verification codes
+stay in flow memory, without being persisted. An entry is created only after
+discovery finds at least one supported device. Account identity is based on a trimmed, case-folded email;
 duplicate account entries are rejected.
 
 The config entry holds the email, canonical account, SHA-256 account namespace,
@@ -115,8 +127,10 @@ read separately, accepting only integer or string `0` and `1`. No camera,
 channel, guessed-reference, or master-control fallback is attempted.
 
 Read-only cloud checks confirmed these properties and readable states. Schema
-support does not establish physical button order or relay operation. Only Key 1
-has prior physical validation; physical verification of Key 2 and Key 3 is pending.
+support does not establish physical button order or relay operation. User-observed
+control of all three property keys was verified on an existing installation,
+with the original states restored. This does not establish physical button order,
+other-model coverage, or command latency.
 
 ## Commands and polling
 
@@ -169,6 +183,9 @@ successful command replaces only that key's confirmed snapshot. Later polling
 can restore an unavailable key without replaying a write. Shared
 discovery/transport failures affect the account; invalid authentication starts
 reauthentication. Entity states are never updated optimistically after a write.
+Coordinator refresh and command publications preserve their transaction order,
+so an older refresh
+cannot overwrite a newer confirmed command state.
 
 `AccountRunner` sends synchronous work to Home Assistant's executor and shares a
 thread lock across clients for the same account. Complete discovery and command
