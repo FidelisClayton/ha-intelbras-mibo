@@ -1,6 +1,7 @@
 """Native switch services publish only cloud-confirmed command outcomes."""
 import asyncio
 import threading
+from unittest.mock import patch
 
 import pytest
 from homeassistant.exceptions import HomeAssistantError
@@ -11,6 +12,55 @@ from tests.test_init import setup
 
 async def service(hass, entity_id, name):
     await hass.services.async_call('switch', name, {'entity_id': entity_id}, blocking=True)
+
+
+async def test_completed_poll_cannot_revert_newer_native_command(hass, entry, cloud):
+    await setup(hass, entry)
+    entity_id = entities(hass, entry)[('switch-a', '11900')]
+    coordinator = entry.runtime_data.coordinator
+    cloud.calls.clear()
+    poll_read, publish_poll = threading.Event(), threading.Event()
+    executor_job = hass.async_add_executor_job
+    delay_next = True
+
+    def delayed_executor(job, *args):
+        nonlocal delay_next
+        if not delay_next:
+            return executor_job(job, *args)
+        delay_next = False
+
+        def completed_io():
+            # The real AccountRunner job has returned and released its thread
+            # lock. Model a worker pause before its future delivers the result.
+            result = job(*args)
+            poll_read.set()
+            assert publish_poll.wait(10)
+            return result
+
+        return executor_job(completed_io)
+
+    with patch.object(hass, 'async_add_executor_job', delayed_executor):
+        poll = asyncio.create_task(coordinator.async_refresh())
+        command = None
+        try:
+            assert await asyncio.to_thread(poll_read.wait, 5)
+            command = asyncio.create_task(service(hass, entity_id, 'turn_on'))
+            # An ordering barrier may hold the command until the poll publishes.
+            # Otherwise let the command finish before delivering the old poll.
+            done, _ = await asyncio.wait({command}, timeout=1)
+            assert not done, 'The command must wait for the pending poll publication.'
+        finally:
+            publish_poll.set()
+            await poll
+            if command is not None:
+                await command
+
+    assert cloud.states['switch-a']['11900'] is True
+    assert hass.states.get(entity_id).state == 'on'
+    assert len(cloud.writes) == 1
+    assert [api for api, _, _ in cloud.calls][-2:] == [
+        'iot.control.SetIotProperties', 'iot.control.GetIotProperties']
+    assert cloud.writes[0]['properties'] == {'11900': 1}
 
 
 @pytest.mark.parametrize("ref", ["11900", "127000", "127100"])
